@@ -13,8 +13,7 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
 COPY . .
 
-# Usa ENTRYPOINT con shell para que $PORT sea interpretado correctamente
-ENTRYPOINT sh -c "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+# 🚨 SOLO esto
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port $PORT"]
