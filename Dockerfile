@@ -16,5 +16,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# No usamos ${PORT:-8000}, solo $PORT (Railway lo define)
-CMD sh -c "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+# Usa ENTRYPOINT con shell para que $PORT sea interpretado correctamente
+ENTRYPOINT sh -c "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
