@@ -1,4 +1,4 @@
-# main.py
+import os
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from app.models import Evento, SessionLocal, init_db
@@ -24,9 +24,6 @@ def actualizar_eventos():
 
 @app.get("/debug")
 def depurar_eventos():
-    import os
-    from app.models import Evento
-
     db = SessionLocal()
     try:
         eventos = db.query(Evento).all()
@@ -37,9 +34,15 @@ def depurar_eventos():
             "directorio_actual": os.getcwd(),
             "archivo_eventos_db_existe": os.path.exists("eventos.db"),
             "total_eventos": len(resultado),
-            "eventos_muestra": resultado  # ← ahora muestra todos
+            "eventos_muestra": resultado  # Puedes limitar si quieres
         }
     except Exception as e:
         return {"error": str(e)}
     finally:
         db.close()
+
+# ✅ Entrada principal para Railway y local
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port)
