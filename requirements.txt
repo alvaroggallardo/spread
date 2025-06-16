@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+sqlalchemy
+selenium
+pandas
+beautifulsoup4
+requests
+dateparser
+geopy
+webdriver-manager

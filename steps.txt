@@ -1,0 +1,5 @@
+1.- Install node
+1.1 Aplicar la directiva para la ejecución de scripts locales:Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+2.- npm install -g railway / npm install -g @railway/cli
+3.- railway login
+
