@@ -8,7 +8,7 @@ from app.save_events import guardar_eventos
 app = FastAPI()
 init_db()
 
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+app.mount("/ui", StaticFiles(directory="app/static", html=True), name="static")
 
 @app.get("/eventos")
 def obtener_eventos():
