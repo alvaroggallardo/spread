@@ -22,6 +22,10 @@ def actualizar_eventos():
     guardar_eventos()
     return {"message": "Eventos actualizados"}
 
+@app.get("/scrap-test")
+def scrap_get_friendly():
+    return actualizar_eventos()
+
 @app.get("/debug")
 def depurar_eventos():
     db = SessionLocal()
