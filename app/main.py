@@ -48,6 +48,10 @@ def depurar_eventos():
     finally:
         db.close()
 
+@app.get("/")
+def check_root():
+    return {"message": "¡Estoy vivo!", "base_url": os.getenv("RAILWAY_ROOT_PATH", "/")}
+
 # ✅ Entrada principal para Railway y local
 if __name__ == "__main__":
     import uvicorn
