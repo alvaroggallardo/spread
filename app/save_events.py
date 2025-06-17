@@ -1,10 +1,12 @@
 # save_events.py
-from app.script_scraping import eventos
+
+from app.script_scraping import obtener_eventos
 from app.models import Evento, SessionLocal, init_db
 
 def guardar_eventos():
     init_db()
     db = SessionLocal()
+    eventos = obtener_eventos()
     for ev in eventos:
         nuevo = Evento(
             fuente=ev.get("fuente"),

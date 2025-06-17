@@ -856,104 +856,107 @@ def inferir_disciplina(titulo):
 #ciudad = geocode_coordinates(lat, lon)
 #print(f"✅ Ciudad detectada: {ciudad}")
 
-print("\n🔍 Buscando eventos culturales...")
-eventos = []
-print("🔍 Obteniendo eventos en Oviedo")
-eventos += get_events_oviedo()
-print("🔍 Obteniendo eventos en Gijón")
-eventos += get_events_gijon()
-print("🔍 Obteniendo eventos en Mieres")
-eventos += get_events_mieres()
-print("🔍 Obteniendo eventos en Avilés")
-eventos += get_events_aviles()
-print("🔍 Obteniendo Asturies cultura")
-eventos += get_events_asturiescultura()
-print("🔍 Obteniendo eventos en Siero")
-eventos += get_events_siero()
-print("🔍 Obteniendo conciertos")
-eventos += get_events_conciertosclub()
-print("🔍 Obteniendo eventos varios")
+def obtener_eventos():
+    print("\n🔍 Buscando eventos culturales...")
+    eventos = []
+    print("🔍 Obteniendo eventos en Oviedo")
+    eventos += get_events_oviedo()
+    print("🔍 Obteniendo eventos en Gijón")
+    eventos += get_events_gijon()
+    print("🔍 Obteniendo eventos en Mieres")
+    eventos += get_events_mieres()
+    print("🔍 Obteniendo eventos en Avilés")
+    eventos += get_events_aviles()
+    print("🔍 Obteniendo Asturies cultura")
+    eventos += get_events_asturiescultura()
+    print("🔍 Obteniendo eventos en Siero")
+    eventos += get_events_siero()
+    print("🔍 Obteniendo conciertos")
+    eventos += get_events_conciertosclub()
+    print("🔍 Obteniendo eventos varios")
 
-tematicas = [
-    "gastronomia", "museos", "fiestas", "cine-y-espectaculos",
-    "deporte", "ocio-infantil", "rutas-y-visitas-guiadas", "ferias-mercados"
-]
-#eventos += obtener_eventos_por_tematica(tematicas)
-# Unificar fechas para todos los eventos (necesario para compatibilidad con el filtrado)
-for ev in eventos:
-    if "fecha" not in ev and "fecha_inicio" in ev:
-        ev["fecha"] = ev["fecha_inicio"]
+    tematicas = [
+        "gastronomia", "museos", "fiestas", "cine-y-espectaculos",
+        "deporte", "ocio-infantil", "rutas-y-visitas-guiadas", "ferias-mercados"
+    ]
+    #eventos += obtener_eventos_por_tematica(tematicas)
+    # Unificar fechas para todos los eventos (necesario para compatibilidad con el filtrado)
+    for ev in eventos:
+        if "fecha" not in ev and "fecha_inicio" in ev:
+            ev["fecha"] = ev["fecha_inicio"]
 
-#eventos += get_events_laboral()
-print("🔍 Obteniendo eventos laboral")
+    #eventos += get_events_laboral()
+    print("🔍 Obteniendo eventos laboral")
 
-print("🔍 Obteniendo eventos desde la API de FiestasAsturias")
-eventos += get_events_fiestas_api()
+    print("🔍 Obteniendo eventos desde la API de FiestasAsturias")
+    eventos += get_events_fiestas_api()
 
-print("🔍 Obteniendo eventos en Asturtur")
-eventos += get_events_asturtur()
+    print("🔍 Obteniendo eventos en Asturtur")
+    eventos += get_events_asturtur()
 
-if eventos:
-    df = pd.DataFrame(eventos)
-    
-    fecha_obj_dt = pd.to_datetime(fecha_objetivo)
+    if eventos:
+        df = pd.DataFrame(eventos)
+        
+        fecha_obj_dt = pd.to_datetime(fecha_objetivo)
 
-    # Convertir fecha y fecha_fin a datetime, manejando tanto tz-aware como tz-naive
-    df["fecha"] = (
-        pd.to_datetime(df["fecha"], errors='coerce', utc=True)
-          .dt.tz_localize(None)
-    )
-
-    if "fecha_fin" in df.columns:
-        df["fecha_fin"] = (
-            pd.to_datetime(df["fecha_fin"], errors='coerce', utc=True)
+        # Convertir fecha y fecha_fin a datetime, manejando tanto tz-aware como tz-naive
+        df["fecha"] = (
+            pd.to_datetime(df["fecha"], errors='coerce', utc=True)
               .dt.tz_localize(None)
         )
-    else:
-        df["fecha_fin"] = pd.NaT
 
-    # Filtrar por la fecha objetivo
-    df_filtrado = df[
-        (df["fecha"].dt.date == fecha_obj_dt.date()) |
-        ((df["fecha"] <= fecha_obj_dt) & (df["fecha_fin"] >= fecha_obj_dt))
-    ].copy()
-
-    # Inferir disciplinas si faltan
-    df_filtrado.loc[:, "disciplina"] = df_filtrado.apply(
-        lambda row: row["disciplina"] if pd.notna(row.get("disciplina")) and row["disciplina"] else inferir_disciplina(row.get("evento", "")),
-        axis=1
-    )
-
-    # 👉 Convertir fechas al formato español solo para mostrar
-    df_filtrado["fecha"] = df_filtrado["fecha"].dt.strftime("%d/%m/%Y")
-    df_filtrado["fecha_fin"] = df_filtrado["fecha_fin"].dt.strftime("%d/%m/%Y")
-    
-    if not df_filtrado.empty:
-        print(f"\n✅ Se encontraron {len(df_filtrado)} eventos para el día {fecha_objetivo}:")
-        # Versión visual con HTML puro para Jupyter
-        df_vis = df_filtrado.copy()
-
-        # Crear hipervínculo en el nombre del evento
-        if "link" in df_vis.columns:
-            df_vis["evento"] = df_vis.apply(
-                lambda row: f'<a href="{row["link"]}" target="_blank">{row["evento"]}</a>', axis=1
+        if "fecha_fin" in df.columns:
+            df["fecha_fin"] = (
+                pd.to_datetime(df["fecha_fin"], errors='coerce', utc=True)
+                  .dt.tz_localize(None)
             )
+        else:
+            df["fecha_fin"] = pd.NaT
 
-        # Eliminar el prefijo "marker " del lugar si existe
-        df_vis["lugar"] = df_vis["lugar"].str.replace("marker ", "", regex=False)
-        df_vis["lugar"] = df_vis["lugar"].replace('marker', ' - ')  # Valor por defecto si solo queda "marker"
-        
-        # Convertir la columna lugar en hipervínculo
-        df_vis["lugar"] = df_vis["lugar"].apply(
-            lambda x: x.replace('=HYPERLINK("', '<a href="').replace('", "', '">').replace('")', '</a>')
+        # Filtrar por la fecha objetivo
+        df_filtrado = df[
+            (df["fecha"].dt.date == fecha_obj_dt.date()) |
+            ((df["fecha"] <= fecha_obj_dt) & (df["fecha_fin"] >= fecha_obj_dt))
+        ].copy()
+
+        # Inferir disciplinas si faltan
+        df_filtrado.loc[:, "disciplina"] = df_filtrado.apply(
+            lambda row: row["disciplina"] if pd.notna(row.get("disciplina")) and row["disciplina"] else inferir_disciplina(row.get("evento", "")),
+            axis=1
         )
 
-        # Eliminar la columna de enlace, ya incluida
-        df_vis = df_vis.drop(columns=["link"])
+        # 👉 Convertir fechas al formato español solo para mostrar
+        df_filtrado["fecha"] = df_filtrado["fecha"].dt.strftime("%d/%m/%Y")
+        df_filtrado["fecha_fin"] = df_filtrado["fecha_fin"].dt.strftime("%d/%m/%Y")
+        
+        if not df_filtrado.empty:
+            print(f"\n✅ Se encontraron {len(df_filtrado)} eventos para el día {fecha_objetivo}:")
+            # Versión visual con HTML puro para Jupyter
+            df_vis = df_filtrado.copy()
 
-        # Mostrar sin índice
-        #display(HTML(df_vis.to_html(escape=False, index=False)))
+            # Crear hipervínculo en el nombre del evento
+            if "link" in df_vis.columns:
+                df_vis["evento"] = df_vis.apply(
+                    lambda row: f'<a href="{row["link"]}" target="_blank">{row["evento"]}</a>', axis=1
+                )
+
+            # Eliminar el prefijo "marker " del lugar si existe
+            df_vis["lugar"] = df_vis["lugar"].str.replace("marker ", "", regex=False)
+            df_vis["lugar"] = df_vis["lugar"].replace('marker', ' - ')  # Valor por defecto si solo queda "marker"
+            
+            # Convertir la columna lugar en hipervínculo
+            df_vis["lugar"] = df_vis["lugar"].apply(
+                lambda x: x.replace('=HYPERLINK("', '<a href="').replace('", "', '">').replace('")', '</a>')
+            )
+
+            # Eliminar la columna de enlace, ya incluida
+            df_vis = df_vis.drop(columns=["link"])
+
+            # Mostrar sin índice
+            #display(HTML(df_vis.to_html(escape=False, index=False)))
+        else:
+            print(f"⚠️ No se encontraron eventos para el día {fecha_objetivo}.")
     else:
-        print(f"⚠️ No se encontraron eventos para el día {fecha_objetivo}.")
-else:
-    print("❌ No se encontraron eventos.")
+        print("❌ No se encontraron eventos.")
+    
+    return df_filtrado.to_dict(orient="records") if not df_filtrado.empty else []
