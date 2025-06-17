@@ -36,14 +36,15 @@ def geocode_coordinates(lat, lon):
 # Configurar Selenium para Jupyter
 # --------------------------
 def get_selenium_driver(headless=True):
+    
     options = Options()
+    
     if headless:
-        options.add_argument("--headless")  # Silenciar navegador
+        options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
-    options.add_argument("--disable-gpu")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--window-size=1920,1080")
-    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    
+    return webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=options)
 
 # --------------------------
 # Scraping Oviedo con Selenium (estructurado)
