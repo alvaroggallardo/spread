@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eventos Asturias</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 2rem; }
+    h1 { color: #333; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; background: #fff; }
+    th, td { padding: 0.5rem; border: 1px solid #ccc; text-align: left; }
+    th { background-color: #eaeaea; }
+    button { padding: 0.5rem 1rem; background: #0077cc; color: #fff; border: none; cursor: pointer; }
+    button:hover { background: #005fa3; }
+    #message { margin-top: 1rem; color: green; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Eventos Culturales en Asturias</h1>
+  <button onclick="actualizarEventos()">🔄 Actualizar Eventos</button>
+  <div id="message"></div>
+  <table id="tabla-eventos">
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Hora</th>
+        <th>Evento</th>
+        <th>Lugar</th>
+        <th>Fuente</th>
+        <th>Link</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    async function cargarEventos() {
+      const res = await fetch('/eventos');
+      const eventos = await res.json();
+      const tbody = document.querySelector('#tabla-eventos tbody');
+      tbody.innerHTML = '';
+      eventos.forEach(e => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${e.fecha?.split('T')[0]}</td>
+          <td>${e.hora || ''}</td>
+          <td>${e.evento}</td>
+          <td>${e.lugar || ''}</td>
+          <td>${e.fuente}</td>
+          <td><a href="${e.link}" target="_blank">Enlace</a></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function actualizarEventos() {
+      document.getElementById('message').textContent = 'Actualizando...';
+      const res = await fetch('/scrap-test');
+      const json = await res.json();
+      document.getElementById('message').textContent = json.message || 'Eventos actualizados';
+      await cargarEventos();
+    }
+
+    // Cargar al iniciar
+    cargarEventos();
+  </script>
+</body>
+</html>

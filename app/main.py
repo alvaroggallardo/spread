@@ -1,11 +1,14 @@
 import os
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from app.models import Evento, SessionLocal, init_db
 from app.save_events import guardar_eventos
 
 app = FastAPI()
 init_db()
+
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 @app.get("/eventos")
 def obtener_eventos():
