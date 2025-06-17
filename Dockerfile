@@ -18,5 +18,6 @@ COPY . .
 RUN chmod +x start.sh
 
 # ESTA LÍNEA FINAL ES LA CLAVE:
-CMD ["./start.sh"]
+CMD sh -c 'echo "PORT is $PORT" && uvicorn app.main:app --host 0.0.0.0 --port $PORT'
+
 
