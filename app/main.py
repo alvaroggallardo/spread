@@ -12,11 +12,8 @@ init_db()
 def obtener_eventos():
     db = SessionLocal()
     eventos = db.query(Evento).all()
-    resultado = [e.__dict__ for e in eventos]
-    for r in resultado:
-        r.pop("_sa_instance_state", None)
     db.close()
-    return JSONResponse(content=jsonable_encoder(resultado))
+    return JSONResponse(content=jsonable_encoder(eventos))
 
 @app.post("/scrap")
 def actualizar_eventos():
