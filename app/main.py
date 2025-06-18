@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from app.models import Evento, SessionLocal, init_db
 from app.save_events import guardar_eventos
+from fastapi.encoders import jsonable_encoder
 
 app = FastAPI()
 init_db()
@@ -15,7 +16,7 @@ def obtener_eventos():
     for r in resultado:
         r.pop("_sa_instance_state", None)
     db.close()
-    return JSONResponse(content=resultado)
+    return JSONResponse(content=jsonable_encoder(resultado))
 
 @app.post("/scrap")
 def actualizar_eventos():
