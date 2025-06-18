@@ -17,7 +17,7 @@ from datetime import datetime
 import re
 from urllib.parse import urljoin, quote_plus
 
-fecha_objetivo = "2025-06-17"  # <-- AQUÍ MODIFICAS EL DÍA
+fecha_objetivo = "2025-06-20"  # <-- AQUÍ MODIFICAS EL DÍA
 
 # --------------------------
 # Geocoding
