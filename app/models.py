@@ -1,4 +1,4 @@
-# models.py
+import os
 from sqlalchemy import Column, Integer, String, DateTime, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -18,7 +18,11 @@ class Evento(Base):
     link = Column(String)
     disciplina = Column(String)
 
-engine = create_engine("sqlite:///eventos.db")
+# 👉 Soporte para PostgreSQL desde variable de entorno
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///eventos.db")
+
+# 👇 Configura el engine con autocommit y autoflush como antes
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():

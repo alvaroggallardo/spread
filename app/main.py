@@ -34,7 +34,7 @@ def depurar_eventos():
             r.pop("_sa_instance_state", None)
         return {
             "directorio_actual": os.getcwd(),
-            "archivo_eventos_db_existe": os.path.exists("eventos.db"),
+            "base_de_datos": os.getenv("DATABASE_URL", "sqlite:///eventos.db") #Si no conecta con postgre usa sqllite como fallback
             "total_eventos": len(resultado),
             "eventos_muestra": resultado  # Puedes limitar si quieres
         }
