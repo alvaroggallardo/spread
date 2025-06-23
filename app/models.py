@@ -2,25 +2,15 @@ import os
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
 
+# ✅ Verificar variable obligatoria
+if "DATABASE_URL" not in os.environ:
+    raise RuntimeError("❌ VARIABLE DE ENTORNO DATABASE_URL NO DEFINIDA")
+
+DATABASE_URL = os.environ["DATABASE_URL"]
+print("✅ Conectando a base de datos:", DATABASE_URL)
+
 Base = declarative_base()
-
-def get_engine():
-    db_url = os.getenv("DATABASE_URL")
-    
-    if db_url:
-        print("✅ Usando PostgreSQL:", db_url)
-        return create_engine(db_url)
-    
-    # Modo fallback local si Railway no inyecta correctamente
-    print("⚠️ DATABASE_URL no está disponible. Usando SQLite local temporalmente.")
-    
-    print("🔎 ENTORNO DISPONIBLE:")
-    for k, v in os.environ.items():
-        print(f"{k} = {v}")
-    
-    return create_engine("sqlite:///eventos.db")
-
-engine = get_engine()
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 class Evento(Base):
@@ -38,3 +28,4 @@ class Evento(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+
