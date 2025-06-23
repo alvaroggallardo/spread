@@ -6,7 +6,10 @@ from app.save_events import guardar_eventos
 from fastapi.encoders import jsonable_encoder
 
 app = FastAPI()
-init_db()
+
+@app.on_event("startup")
+def startup_event():
+    init_db()
 
 @app.get("/eventos")
 def obtener_eventos():
