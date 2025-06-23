@@ -5,16 +5,19 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 Base = declarative_base()
 
 def get_engine():
-    # Railway define esta variable automáticamente
-    if "RAILWAY_ENVIRONMENT" in os.environ:
-        if "DATABASE_URL" not in os.environ:
-            raise RuntimeError("❌ DATABASE_URL no está definida en Railway")
-        url = os.environ["DATABASE_URL"]
-        print("✅ Usando PostgreSQL:", url)
-        return create_engine(url)
+    db_url = os.getenv("DATABASE_URL")
     
-    # Si estamos en local
-    print("⚠️ Modo local detectado, usando SQLite")
+    if db_url:
+        print("✅ Usando PostgreSQL:", db_url)
+        return create_engine(db_url)
+    
+    # Modo fallback local si Railway no inyecta correctamente
+    print("⚠️ DATABASE_URL no está disponible. Usando SQLite local temporalmente.")
+    
+    print("🔎 ENTORNO DISPONIBLE:")
+    for k, v in os.environ.items():
+        print(f"{k} = {v}")
+    
     return create_engine("sqlite:///eventos.db")
 
 engine = get_engine()
