@@ -39,7 +39,7 @@ def actualizar_eventos():
 def scrap_get_friendly():
     return actualizar_eventos()
 
-@app.get("/debug")
+@app.get("/debug", summary="Depurar estado de la base de datos")
 def depurar_eventos():
     db = SessionLocal()
     try:
@@ -47,11 +47,19 @@ def depurar_eventos():
         resultado = [e.__dict__ for e in eventos]
         for r in resultado:
             r.pop("_sa_instance_state", None)
+
+        # Información del motor de base de datos
+        engine = db.get_bind()
+        inspector = inspect(engine)
+
         return {
             "directorio_actual": os.getcwd(),
-            "base_de_datos": os.getenv("DATABASE_URL", "sqlite:///eventos.db"), #Si no conecta con postgre usa sqllite como fallback
+            "base_de_datos_url": str(engine.url),
+            "motor_bd": engine.dialect.name,
+            "esquema": inspector.default_schema_name,
+            "tablas_en_bd": inspector.get_table_names(),
             "total_eventos": len(resultado),
-            "eventos_muestra": resultado  # Puedes limitar si quieres
+            "eventos_muestra": resultado
         }
     except Exception as e:
         return {"error": str(e)}
