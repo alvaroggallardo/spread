@@ -4,12 +4,24 @@ from fastapi.responses import JSONResponse
 from app.models import Evento, SessionLocal, init_db
 from app.save_events import guardar_eventos
 from fastapi.encoders import jsonable_encoder
+from sqlalchemy import inspect
 
 app = FastAPI()
 
-@app.on_event("startup")
-def startup_event():
-    init_db()
+@app.get("/check-tabla-eventos", summary="Comprobar si existe la tabla eventos", description="Devuelve true/false según la existencia de la tabla en la base de datos")
+def check_tabla_eventos():
+    inspector = inspect(SessionLocal().bind)
+    tablas = inspector.get_table_names()
+    return {"tabla_eventos_existe": "eventos" in tablas}
+
+@app.get("/crear-tabla-eventos", summary="Crear tabla eventos", description="Crea la tabla eventos si no existe. No borra datos existentes.")
+def crear_tabla_eventos():
+    from app.models import Base, engine
+    inspector = inspect(engine)
+    if "eventos" in inspector.get_table_names():
+        return {"status": "Ya existe la tabla eventos"}
+    Base.metadata.create_all(bind=engine)
+    return {"status": "Tabla eventos creada"}
 
 @app.get("/eventos")
 def obtener_eventos():
