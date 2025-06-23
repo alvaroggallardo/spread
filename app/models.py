@@ -2,15 +2,17 @@ import os
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# ✅ Verificar variable obligatoria
-if "DATABASE_URL" not in os.environ:
-    raise RuntimeError("❌ VARIABLE DE ENTORNO DATABASE_URL NO DEFINIDA")
-
-DATABASE_URL = os.environ["DATABASE_URL"]
-print("✅ Conectando a base de datos:", DATABASE_URL)
-
 Base = declarative_base()
-engine = create_engine(DATABASE_URL)
+
+def get_engine():
+    if "DATABASE_URL" not in os.environ:
+        raise RuntimeError("❌ VARIABLE DE ENTORNO DATABASE_URL NO DEFINIDA")
+    url = os.environ["DATABASE_URL"]
+    print("✅ Conectando a base de datos:", url)
+    return create_engine(url)
+
+# Engine y sesión se generan al primer uso
+engine = get_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 class Evento(Base):
@@ -28,4 +30,5 @@ class Evento(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+
 
