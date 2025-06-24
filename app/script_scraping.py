@@ -875,13 +875,13 @@ def obtener_eventos(fecha_objetivo=None):
     
     try:
         print("🔍 Obteniendo eventos Oviedo")
-        eventos += get_events_oviedo(fechas_objetivo)
+        #eventos += get_events_oviedo(fechas_objetivo)
     except Exception as e:
         print(f"❌ Error al obtener eventos de Oviedo: {e}")
     
     try:
         print("🔍 Obteniendo eventos Gijón")
-        #eventos += get_events_gijon(fechas_objetivo)
+        eventos += get_events_gijon(fechas_objetivo)
     except Exception as e:
         print(f"❌ Error al obtener eventos de Gijón: {e}")
     
