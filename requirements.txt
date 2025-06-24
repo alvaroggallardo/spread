@@ -8,3 +8,4 @@ requests
 dateparser
 geopy
 webdriver-manager
+psycopg2-binary
