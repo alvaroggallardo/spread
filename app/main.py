@@ -5,6 +5,7 @@ from app.models import Evento, SessionLocal, init_db
 from app.save_events import guardar_eventos
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import inspect
+from datetime import datetime, timedelta
 
 app = FastAPI()
 
