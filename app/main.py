@@ -30,10 +30,36 @@ def obtener_eventos():
     db.close()
     return JSONResponse(content=jsonable_encoder(eventos))
 
-@app.post("/scrap")
-def actualizar_eventos():
-    guardar_eventos()
-    return {"message": "Eventos actualizados"}
+@app.post("/scrap", summary="Scrapear eventos de los próximos 7 días")
+def scrapear_semana():
+    total_insertados = 0
+    errores = []
+
+    for i in range(7):
+        fecha_objetivo = (datetime.now() + timedelta(days=i)).date()
+        try:
+            nuevos = guardar_eventos(fecha_objetivo)
+            total_insertados += nuevos
+        except Exception as e:
+            errores.append(f"{fecha_objetivo}: {str(e)}")
+
+    if errores:
+        raise HTTPException(status_code=500, detail={"errores": errores, "insertados": total_insertados})
+    
+    return {"status": "OK", "insertados": total_insertados}
+
+@app.delete("/borrar-eventos", summary="Vaciar la tabla eventos")
+def borrar_eventos():
+    db = SessionLocal()
+    try:
+        num_rows = db.query(Evento).delete()
+        db.commit()
+        return {"status": f"Se eliminaron {num_rows} eventos"}
+    except Exception as e:
+        db.rollback()
+        return {"error": str(e)}
+    finally:
+        db.close()
 
 @app.get("/scrap-test")
 def scrap_get_friendly():
@@ -65,6 +91,10 @@ def depurar_eventos():
         return {"error": str(e)}
     finally:
         db.close()
+        
+@app.get("/env-check")
+def env_check():
+    return dict(os.environ)
 
 @app.get("/")
 def check_root():
