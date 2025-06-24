@@ -6,10 +6,14 @@ from sqlalchemy import and_
 def parse_date_safe(value):
     if isinstance(value, datetime):
         return value
-    try:
-        return datetime.strptime(value, "%d/%m/%Y") if isinstance(value, str) else None
-    except Exception:
-        return None
+    if isinstance(value, str):
+        try:
+            return datetime.strptime(value, "%d/%m/%Y")
+        except Exception:
+            return None
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    return None
 
 def evento_ya_existe(db, ev):
     return db.query(Evento).filter(

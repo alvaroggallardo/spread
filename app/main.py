@@ -37,7 +37,7 @@ def scrapear_semana():
     errores = []
 
     for i in range(7):
-        fecha_objetivo = (datetime.now() + timedelta(days=i)).date()
+        fecha_objetivo = (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d")
         try:
             nuevos = guardar_eventos(fecha_objetivo)
             total_insertados += nuevos
@@ -64,7 +64,11 @@ def borrar_eventos():
 
 @app.get("/scrap-test")
 def scrap_get_friendly():
-    return actualizar_eventos()
+    try:
+        nuevos = guardar_eventos()
+        return {"status": "OK", "insertados": nuevos}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/debug", summary="Depurar estado de la base de datos")
 def depurar_eventos():

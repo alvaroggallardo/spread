@@ -48,21 +48,21 @@ def get_selenium_driver(headless=True):
 # --------------------------
 # Scraping Oviedo con Selenium (estructurado)
 # --------------------------
-def get_events_oviedo():
+def get_events_oviedo(fechas_objetivo):
+    
     url = "https://www.visitoviedo.info/agenda"
     events = []
-    driver = get_selenium_driver(headless=True)  # No abrir navegador
+    driver = get_selenium_driver(headless=True)
+    
     try:
         driver.get(url)
         time.sleep(5)  # Esperar a que cargue el contenido JS
 
         soup = BeautifulSoup(driver.page_source, "html.parser")
-
-        # Cada día puede tener múltiples eventos dentro de "day-entry"
         day_entries = soup.select("div.day-entry")
 
         for day in day_entries:
-            date_str = ""
+            parsed_date = None
             day_anchor = day.select_one("a.day")
             if day_anchor:
                 day_num = day_anchor.select_one("span.day-of-month").text.strip()
@@ -70,8 +70,9 @@ def get_events_oviedo():
                 year = datetime.now().year
                 date_str = f"{day_num} {month} {year}"
                 parsed_date = dateparser.parse(date_str, languages=['es'])
-            else:
-                parsed_date = None
+
+            if not parsed_date or parsed_date.date() not in fechas_objetivo:
+                continue
 
             for entry in day.select("div.entry"):
                 link_el = entry.select_one("a")
@@ -100,13 +101,16 @@ def get_events_oviedo():
 
     return events
 
+
 # --------------------------
 # Scraping Gijón desde la API AJAX
 # --------------------------
 def get_events_gijon(fechas_objetivo):
+    
     url = "https://www.gijon.es/es/eventos"
     events = []
     driver = get_selenium_driver(headless=True)
+    
     try:
         driver.get(url)
         time.sleep(5)
@@ -126,18 +130,25 @@ def get_events_gijon(fechas_objetivo):
                     break
 
             fecha_evento = None
+            incluir = False
+
             if "Entre el" in date_text and "y el" in date_text:
                 fechas = date_text.replace("Entre el", "").replace("del", "").split(" y el ")
                 inicio = dateparser.parse(fechas[0].strip(), languages=["es"])
                 fin = dateparser.parse(fechas[1].strip(), languages=["es"])
                 if inicio and fin:
-                    objetivo = datetime.strptime(fecha_objetivo, "%Y-%m-%d")
-                    if inicio.date() <= objetivo.date() <= fin.date():
-                        fecha_evento = objetivo
+                    for f in fechas_objetivo:
+                        if inicio.date() <= f <= fin.date():
+                            fecha_evento = f
+                            incluir = True
+                            break
             else:
-                fecha_evento = dateparser.parse(date_text, languages=["es"])
+                fecha_parseada = dateparser.parse(date_text, languages=["es"])
+                if fecha_parseada and fecha_parseada.date() in fechas_objetivo:
+                    fecha_evento = fecha_parseada
+                    incluir = True
 
-            if not fecha_evento:
+            if not incluir or not fecha_evento:
                 continue
 
             # Hora
@@ -194,7 +205,7 @@ def get_events_mieres(fechas_objetivo):
                 hora_txt = ""
 
             parsed_date = dateparser.parse(f"{fecha_txt} 2025", languages=["es"])
-            if not parsed_date or parsed_date.strftime("%Y-%m-%d") != fecha_objetivo:
+            if not parsed_date or parsed_date.date() not in fechas_objetivo:
                 continue
 
             # Lugar
@@ -216,6 +227,7 @@ def get_events_mieres(fechas_objetivo):
         driver.quit()
 
     return events
+
 
 def get_events_asturiescultura(fechas_objetivo):
     from urllib.parse import urljoin
@@ -245,7 +257,7 @@ def get_events_asturiescultura(fechas_objetivo):
                     continue
                 fecha_txt, municipio = strong_el.text.strip().split("|")
                 fecha_evento = dateparser.parse(fecha_txt.strip(), languages=["es"])
-                if not fecha_evento or fecha_evento.strftime("%Y-%m-%d") != fecha_objetivo:
+                if not fecha_evento or fecha_evento.date() not in fechas_objetivo:
                     continue
 
                 lugar = municipio.strip()
@@ -284,6 +296,7 @@ def get_events_asturiescultura(fechas_objetivo):
 
     return eventos
 
+
 def get_events_aviles(fechas_objetivo):
     url = "https://aviles.es/proximos-eventos"
     events = []
@@ -306,7 +319,7 @@ def get_events_aviles(fechas_objetivo):
                     inicio_text = badge.text.replace("INICIO:", "").strip()
                     break
             parsed_date = dateparser.parse(inicio_text, languages=["es"])
-            if not parsed_date or parsed_date.strftime("%Y-%m-%d") != fecha_objetivo:
+            if not parsed_date or parsed_date.date() not in fechas_objetivo:
                 continue
 
             # Enlace al evento
@@ -336,7 +349,8 @@ def get_events_aviles(fechas_objetivo):
 
     return events
 
-def get_events_siero():
+
+def get_events_siero(fechas_objetivo):
     url = "https://www.ayto-siero.es/agenda/"
     response = requests.get(url)
     soup = BeautifulSoup(response.text, "html.parser")
@@ -359,6 +373,9 @@ def get_events_siero():
                 continue
             fecha_str = f"{day_el.text.strip()} {month_el.text.strip()} {year_el.text.strip()}"
             fecha = dateparser.parse(fecha_str, languages=["es"])
+
+            if not fecha or fecha.date() not in fechas_objetivo:
+                continue
 
             # Lugar
             lugar_el = e.select_one("span.ectbe-address")
@@ -396,7 +413,8 @@ def get_events_siero():
 
     return eventos
 
-def get_events_conciertosclub():
+
+def get_events_conciertosclub(fechas_objetivo):
     from urllib.parse import urljoin
 
     base_url = "https://conciertos.club"
@@ -420,6 +438,9 @@ def get_events_conciertosclub():
                 fecha_meta = concierto.select_one("meta[itemprop='startDate']")
                 fecha_raw = fecha_meta["content"] if fecha_meta else None
                 fecha = dateparser.parse(fecha_raw) if fecha_raw else None
+
+                if not fecha or fecha.date() not in fechas_objetivo:
+                    continue
 
                 # Hora extraída correctamente
                 time_div = concierto.select_one("div.time")
@@ -451,7 +472,8 @@ def get_events_conciertosclub():
 
     return eventos
 
-def obtener_eventos_por_tematica(tematicas):
+
+def obtener_eventos_por_tematica(tematicas, fechas_objetivo):
     base_url = "https://www.turismoasturias.es/agenda-de-asturias"
     eventos = []
 
@@ -473,13 +495,19 @@ def obtener_eventos_por_tematica(tematicas):
                     fecha_fin_el = tarjeta.select_one('[itemprop="endDate"]')
                     fecha_fin_raw = fecha_fin_el['date'] if fecha_fin_el else fecha_inicio_raw
 
-                    # Formato español
-                    fecha_inicio = dateparser.parse(fecha_inicio_raw).strftime("%d/%m/%Y")
-                    fecha_fin = dateparser.parse(fecha_fin_raw).strftime("%d/%m/%Y")
+                    fecha_inicio = dateparser.parse(fecha_inicio_raw)
+                    fecha_fin = dateparser.parse(fecha_fin_raw)
 
-                    # Solo hora de inicio
-                    hora_el = tarjeta.select_one('.hour')
+                    # ❗ Filtrar por fechas_objetivo
+                    if not any(
+                        fecha_inicio.date() <= objetivo <= fecha_fin.date()
+                        for objetivo in fechas_objetivo
+                    ):
+                        continue
+
+                    # Hora
                     hora = ""
+                    hora_el = tarjeta.select_one('.hour')
                     if hora_el:
                         hora_text = hora_el.get_text(" ", strip=True)
                         for parte in hora_text.split():
@@ -505,12 +533,12 @@ def obtener_eventos_por_tematica(tematicas):
 
     return eventos
 
-def get_events_laboral():
+
+def get_events_laboral(fechas_objetivo):
     base_url = "https://www.laboralciudaddelacultura.com"
     base_path = "/agenda"
     eventos = []
 
-    # Diccionario de categorías con sus respectivos IDs
     categorias = {
         "Actividades especiales": "3564612",
         "Artes escénicas": "3564367",
@@ -569,11 +597,14 @@ def get_events_laboral():
                 start_dt = datetime.strptime(start_date.split()[0], "%Y-%m-%d")
                 end_dt = datetime.strptime(end_date.split()[0], "%Y-%m-%d")
 
-                # Dentro del bucle que procesa cada evento
+                # ❗ Filtro por fechas objetivo
+                if not any(start_dt.date() <= f <= end_dt.date() for f in fechas_objetivo):
+                    continue
+
                 hora_el = card.select_one("span.d-block.hour")
                 if hora_el:
-                    hora_text = hora_el.get_text(" ", strip=True)  # Reemplaza saltos por espacio
-                    match = re.search(r"\b\d{1,2}:\d{2}\b", hora_text)  # Busca la primera hora tipo 20:30
+                    hora_text = hora_el.get_text(" ", strip=True)
+                    match = re.search(r"\b\d{1,2}:\d{2}\b", hora_text)
                     hora = match.group(0) if match else ""
                 else:
                     hora = ""
@@ -593,6 +624,7 @@ def get_events_laboral():
 
     return eventos
 
+
 # Constantes con los IDs conocidos
 SITE_ID = 3649360
 SECTION_ID = 60825576  # la categoría "Todas" que incluye todos los eventos
@@ -600,12 +632,11 @@ SECTION_ID = 60825576  # la categoría "Todas" que incluye todos los eventos
 def get_events_fiestas_api(fechas_objetivo):
     """
     Descarga todos los eventos de FiestasAsturias.com en la sección 'Todas',
-    y filtra internamente por la fecha objetivo, incluyendo rangos.
+    y filtra internamente por las fechas objetivo, incluyendo eventos en rango.
     """
     api_base = "https://api.ww-api.com/front"
     eventos = []
     page = 1
-    objetivo = datetime.strptime(fecha_objetivo, "%Y-%m-%d").date()
 
     while True:
         items_url = (
@@ -634,8 +665,8 @@ def get_events_fiestas_api(fechas_objetivo):
             else:
                 dt_end = dt_start
 
-            # --- filtro por rango ---
-            if not (dt_start.date() <= objetivo <= dt_end.date()):
+            # --- filtro por cualquier fecha objetivo dentro del rango ---
+            if not any(dt_start.date() <= f <= dt_end.date() for f in fechas_objetivo):
                 continue
 
             # --- lugar con coordenadas o dirección ---
@@ -669,17 +700,17 @@ def get_events_fiestas_api(fechas_objetivo):
 
     return eventos
 
-def get_events_asturtur():
+
+def get_events_asturtur(fechas_objetivo):
     base = "https://asturtur.com"
-    url  = f"{base}/7-dias-en-asturias"
+    url = f"{base}/7-dias-en-asturias"
     events = []
     today = datetime.now()
 
-    # Mapa rápido de meses en español a número
     meses = {
-        "enero":1, "febrero":2, "marzo":3, "abril":4, "mayo":5,
-        "junio":6, "julio":7, "agosto":8, "septiembre":9,
-        "octubre":10, "noviembre":11, "diciembre":12
+        "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5,
+        "junio": 6, "julio": 7, "agosto": 8, "septiembre": 9,
+        "octubre": 10, "noviembre": 11, "diciembre": 12
     }
 
     try:
@@ -689,51 +720,32 @@ def get_events_asturtur():
         cards = soup.select("div.card-body")
 
         for card in cards:
-            # --- Título ---
             title_el = card.select_one("h3.node__title .field--name-title")
             title = title_el.get_text(strip=True) if title_el else "Sin título"
 
-            # --- Link al detalle ---
             art = card.find_parent("article")
             a_block = art.find_parent("a", class_="a-block") if art else None
             link = urljoin(base, a_block["href"]) if (a_block and a_block.has_attr("href")) else url
 
-            # --- Categoría ---
             category = card.select_one("span.tipoevent")
             category = category.get_text(strip=True) if category else ""
 
-            # --- Raw Fecha/Hora ---
             span_fecha = card.select_one("span.iconed-data-item img[alt='Cuándo']")
             raw = span_fecha.parent.get_text(" ", strip=True) if span_fecha else ""
-            # ejemplos posibles de raw:
-            #   "mañana, 19.00h"
-            #   "Vie. 30, 18.45h"
-            #   "Lun. 2 de Junio, 19.00h"
 
             dt = None
             hora = ""
 
-            # 1) Patrón SIN mes (Vie. 30, 18.45h)
-            m1 = re.match(
-                r'^[A-Za-zÁÉÍÓÚÜÑñ]{2,4}\.\s*(\d{1,2}),\s*(\d{1,2})[.:](\d{2})h?',
-                raw
-            )
+            m1 = re.match(r'^[A-Za-zÁÉÍÓÚÜÑñ]{2,4}\.\s*(\d{1,2}),\s*(\d{1,2})[.:](\d{2})h?', raw)
             if m1:
                 day_i, hour_i, min_i = map(int, m1.groups())
-                # inferir mes/año en función de today
                 if day_i >= today.day:
                     month_i, year_i = today.month, today.year
                 else:
-                    # siguiente mes
-                    if today.month == 12:
-                        month_i, year_i = 1, today.year + 1
-                    else:
-                        month_i, year_i = today.month + 1, today.year
+                    month_i, year_i = (1, today.year + 1) if today.month == 12 else (today.month + 1, today.year)
                 dt = datetime(year_i, month_i, day_i, hour_i, min_i)
                 hora = dt.strftime("%H:%M")
-
             else:
-                # 2) Patrón CON mes explícito (Lun. 2 de Junio, 19.00h)
                 m2 = re.match(
                     r'^[A-Za-zÁÉÍÓÚÜÑñ]{2,4}\.\s*(\d{1,2})\s+de\s+([A-Za-zñÑ]+),\s*(\d{1,2})[.:](\d{2})h?',
                     raw
@@ -742,38 +754,33 @@ def get_events_asturtur():
                     day_i = int(m2.group(1))
                     month_name = m2.group(2).lower()
                     hour_i = int(m2.group(3))
-                    min_i  = int(m2.group(4))
+                    min_i = int(m2.group(4))
                     month_i = meses.get(month_name, today.month)
                     year_i = today.year
-                    # si el mes ya pasó, asumir siguiente año
                     if month_i < today.month:
                         year_i += 1
                     dt = datetime(year_i, month_i, day_i, hour_i, min_i)
                     hora = dt.strftime("%H:%M")
-
                 else:
-                    # 3) casos "hoy", "mañana", o fechas completas parseables
-                    # limpiamos comas, cambiamos "." por ":" y quitamos "h"
-                    clean = raw.replace(",", "") \
-                               .replace("h", "") \
-                               .replace(".", ":")
+                    clean = raw.replace(",", "").replace("h", "").replace(".", ":")
                     dt = dateparser.parse(clean, languages=["es"])
                     if dt:
                         hora = dt.strftime("%H:%M")
                     else:
-                        # no pudo parsear → saltar este evento
                         continue
 
-            # --- Lugar: inspeccionar detalle y extraer spans debajo de <span class="lh-1"> ---
+            # 💡 FILTRO: solo si la fecha está en el conjunto objetivo
+            if not dt or dt.date() not in fechas_objetivo:
+                continue
+
             loc_txt = ""
             try:
-                d = requests.get(link); d.raise_for_status()
+                d = requests.get(link)
+                d.raise_for_status()
                 dsoup = BeautifulSoup(d.text, "html.parser")
                 cont = dsoup.select_one("span.lh-1")
                 if cont:
-                    # tomamos solo los <span class="smaller90"> que siguen al <strong>
-                    parts = [sp.get_text(strip=True).lstrip("@")
-                             for sp in cont.select("span.smaller90")]
+                    parts = [sp.get_text(strip=True).lstrip("@") for sp in cont.select("span.smaller90")]
                     loc_txt = " ".join(parts)
             except Exception:
                 loc_txt = ""
@@ -784,19 +791,20 @@ def get_events_asturtur():
                 lugar = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={q}", "{loc_txt}")'
 
             events.append({
-                "fuente":    "Asturtur",
-                "evento":    title,
+                "fuente": "Asturtur",
+                "evento": title,
                 "categoria": category,
-                "fecha":     dt,
-                "hora":      hora,
-                "lugar":     lugar,
-                "link":      link
+                "fecha": dt,
+                "hora": hora,
+                "lugar": lugar,
+                "link": link
             })
 
     except Exception as e:
         print(f"❌ Error en Asturtur: {e}")
 
     return events
+
 
 def inferir_disciplina(titulo):
     titulo = titulo.lower()
