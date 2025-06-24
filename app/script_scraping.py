@@ -960,7 +960,7 @@ def obtener_eventos(fecha_objetivo=None):
             # Mostrar sin índice
             #display(HTML(df_vis.to_html(escape=False, index=False)))
         else:
-            print(f"⚠️ No se encontraron eventos para el día {}.")
+            print(f"⚠️ No se encontraron eventos para los días {sorted(fechas_objetivo)}.")
     else:
         print("❌ No se encontraron eventos.")
     
