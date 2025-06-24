@@ -872,40 +872,82 @@ def obtener_eventos(fecha_objetivo=None):
     
     print("\n🔍 Buscando eventos culturales...")
     eventos = []
-    print("🔍 Obteniendo eventos en Oviedo")
-    eventos += get_events_oviedo()
-    print("🔍 Obteniendo eventos en Gijón")
-    eventos += get_events_gijon(fechas_objetivo)
-    print("🔍 Obteniendo eventos en Mieres")
-    eventos += get_events_mieres(fechas_objetivo)
-    print("🔍 Obteniendo eventos en Avilés")
-    eventos += get_events_aviles(fechas_objetivo)
-    print("🔍 Obteniendo Asturies cultura")
-    eventos += get_events_asturiescultura(fechas_objetivo)
-    print("🔍 Obteniendo eventos en Siero")
-    eventos += get_events_siero()
-    print("🔍 Obteniendo conciertos")
-    eventos += get_events_conciertosclub()
-    print("🔍 Obteniendo eventos varios")
-
+    
+    try:
+        print("🔍 Obteniendo eventos Oviedo")
+        eventos += get_events_oviedo(fechas_objetivo)
+    except Exception as e:
+        print(f"❌ Error al obtener eventos de Oviedo: {e}")
+    
+    try:
+        print("🔍 Obteniendo eventos Gijón")
+        eventos += get_events_gijon(fechas_objetivo)
+    except Exception as e:
+        print(f"❌ Error al obtener eventos de Gijón: {e}")
+    
+    try:
+        print("🔍 Obteniendo eventos Mieres")
+        eventos += get_events_mieres(fechas_objetivo)
+    except Exception as e:
+        print(f"❌ Error al obtener eventos de Mieres: {e}")
+    
+    try:
+        print("🔍 Obteniendo eventos Avilés")
+        eventos += get_events_aviles(fechas_objetivo)
+    except Exception as e:
+        print(f"❌ Error al obtener eventos de Avilés: {e}")
+    
+    try:
+        print("🔍 Obteniendo eventos asturiescultura")
+        eventos += get_events_asturiescultura(fechas_objetivo)
+    except Exception as e:
+        print(f"❌ Error al obtener eventos de asturiescultura: {e}")
+    
+    try:
+        print("🔍 Obteniendo eventos Siero")
+        eventos += get_events_siero(fechas_objetivo)
+    except Exception as e:
+        print(f"❌ Error al obtener eventos de Siero: {e}")
+    
+    try:
+        print("🔍 Obteniendo eventos conciertosclub")
+        eventos += get_events_conciertosclub(fechas_objetivo)
+    except Exception as e:
+        print(f"❌ Error al obtener eventos de conciertosclub: {e}")
+    
     tematicas = [
         "gastronomia", "museos", "fiestas", "cine-y-espectaculos",
         "deporte", "ocio-infantil", "rutas-y-visitas-guiadas", "ferias-mercados"
     ]
-    #eventos += obtener_eventos_por_tematica(tematicas)
+
+    try:
+        print("🔍 Obteniendo eventos tematicas")
+        eventos += obtener_eventos_por_tematica(tematicas,fechas_objetivo)
+    except Exception as e:
+        print(f"❌ Error al obtener eventos de tematicas: {e}")
+    
     # Unificar fechas para todos los eventos (necesario para compatibilidad con el filtrado)
     for ev in eventos:
         if "fecha" not in ev and "fecha_inicio" in ev:
             ev["fecha"] = ev["fecha_inicio"]
 
-    #eventos += get_events_laboral()
-    print("🔍 Obteniendo eventos laboral")
+    try:
+        print("🔍 Obteniendo eventos Laboral")
+        eventos += get_events_laboral(fechas_objetivo)
+    except Exception as e:
+        print(f"❌ Error al obtener eventos de Laboral: {e}")
+    
+    try:
+        print("🔍 Obteniendo eventos FiestasAsturias")
+        eventos += get_events_fiestas_api(fechas_objetivo)
+    except Exception as e:
+        print(f"❌ Error al obtener eventos de FiestasAsturias: {e}")
 
-    print("🔍 Obteniendo eventos desde la API de FiestasAsturias")
-    eventos += get_events_fiestas_api(fechas_objetivo)
-
-    print("🔍 Obteniendo eventos en Asturtur")
-    eventos += get_events_asturtur()
+    try:
+        print("🔍 Obteniendo eventos Asturtur")
+        eventos += get_events_asturtur(fechas_objetivo)
+    except Exception as e:
+        print(f"❌ Error al obtener eventos de Asturtur: {e}")
 
     if eventos:
         df = pd.DataFrame(eventos)
