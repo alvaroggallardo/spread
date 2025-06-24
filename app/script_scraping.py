@@ -881,37 +881,37 @@ def obtener_eventos(fecha_objetivo=None):
     
     try:
         print("🔍 Obteniendo eventos Gijón")
-        eventos += get_events_gijon(fechas_objetivo)
+        #eventos += get_events_gijon(fechas_objetivo)
     except Exception as e:
         print(f"❌ Error al obtener eventos de Gijón: {e}")
     
     try:
         print("🔍 Obteniendo eventos Mieres")
-        eventos += get_events_mieres(fechas_objetivo)
+        #eventos += get_events_mieres(fechas_objetivo)
     except Exception as e:
         print(f"❌ Error al obtener eventos de Mieres: {e}")
     
     try:
         print("🔍 Obteniendo eventos Avilés")
-        eventos += get_events_aviles(fechas_objetivo)
+        #eventos += get_events_aviles(fechas_objetivo)
     except Exception as e:
         print(f"❌ Error al obtener eventos de Avilés: {e}")
     
     try:
         print("🔍 Obteniendo eventos asturiescultura")
-        eventos += get_events_asturiescultura(fechas_objetivo)
+        #eventos += get_events_asturiescultura(fechas_objetivo)
     except Exception as e:
         print(f"❌ Error al obtener eventos de asturiescultura: {e}")
     
     try:
         print("🔍 Obteniendo eventos Siero")
-        eventos += get_events_siero(fechas_objetivo)
+        #eventos += get_events_siero(fechas_objetivo)
     except Exception as e:
         print(f"❌ Error al obtener eventos de Siero: {e}")
     
     try:
         print("🔍 Obteniendo eventos conciertosclub")
-        eventos += get_events_conciertosclub(fechas_objetivo)
+        #eventos += get_events_conciertosclub(fechas_objetivo)
     except Exception as e:
         print(f"❌ Error al obtener eventos de conciertosclub: {e}")
     
@@ -922,7 +922,7 @@ def obtener_eventos(fecha_objetivo=None):
 
     try:
         print("🔍 Obteniendo eventos tematicas")
-        eventos += obtener_eventos_por_tematica(tematicas,fechas_objetivo)
+        #eventos += obtener_eventos_por_tematica(tematicas,fechas_objetivo)
     except Exception as e:
         print(f"❌ Error al obtener eventos de tematicas: {e}")
     
@@ -933,19 +933,19 @@ def obtener_eventos(fecha_objetivo=None):
 
     try:
         print("🔍 Obteniendo eventos Laboral")
-        eventos += get_events_laboral(fechas_objetivo)
+        #eventos += get_events_laboral(fechas_objetivo)
     except Exception as e:
         print(f"❌ Error al obtener eventos de Laboral: {e}")
     
     try:
         print("🔍 Obteniendo eventos FiestasAsturias")
-        eventos += get_events_fiestas_api(fechas_objetivo)
+        #eventos += get_events_fiestas_api(fechas_objetivo)
     except Exception as e:
         print(f"❌ Error al obtener eventos de FiestasAsturias: {e}")
 
     try:
         print("🔍 Obteniendo eventos Asturtur")
-        eventos += get_events_asturtur(fechas_objetivo)
+        #eventos += get_events_asturtur(fechas_objetivo)
     except Exception as e:
         print(f"❌ Error al obtener eventos de Asturtur: {e}")
 
