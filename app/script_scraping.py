@@ -16,6 +16,7 @@ from dateparser.search import search_dates
 from datetime import datetime
 import re
 from urllib.parse import urljoin, quote_plus
+from datetime import datetime, timedelta
 
 # --------------------------
 # Geocoding
@@ -102,7 +103,7 @@ def get_events_oviedo():
 # --------------------------
 # Scraping Gijón desde la API AJAX
 # --------------------------
-def get_events_gijon():
+def get_events_gijon(fechas_objetivo):
     url = "https://www.gijon.es/es/eventos"
     events = []
     driver = get_selenium_driver(headless=True)
@@ -165,7 +166,7 @@ def get_events_gijon():
 
     return events
 
-def get_events_mieres():
+def get_events_mieres(fechas_objetivo):
     url = "https://www.mieres.es/cultura/"
     events = []
     driver = get_selenium_driver(headless=True)
@@ -216,7 +217,7 @@ def get_events_mieres():
 
     return events
 
-def get_events_asturiescultura():
+def get_events_asturiescultura(fechas_objetivo):
     from urllib.parse import urljoin
     base_url = "https://www.asturiesculturaenrede.es"
     pages_to_check = 20
@@ -283,7 +284,7 @@ def get_events_asturiescultura():
 
     return eventos
 
-def get_events_aviles():
+def get_events_aviles(fechas_objetivo):
     url = "https://aviles.es/proximos-eventos"
     events = []
     driver = get_selenium_driver(headless=True)
@@ -596,7 +597,7 @@ def get_events_laboral():
 SITE_ID = 3649360
 SECTION_ID = 60825576  # la categoría "Todas" que incluye todos los eventos
 
-def get_events_fiestas_api():
+def get_events_fiestas_api(fechas_objetivo):
     """
     Descarga todos los eventos de FiestasAsturias.com en la sección 'Todas',
     y filtra internamente por la fecha objetivo, incluyendo rangos.
@@ -854,19 +855,25 @@ def inferir_disciplina(titulo):
 #ciudad = geocode_coordinates(lat, lon)
 #print(f"✅ Ciudad detectada: {ciudad}")
 
-def obtener_eventos():
+def obtener_eventos(fecha_objetivo=None):
+    
+    if fecha_objetivo:
+        fechas_objetivo = { fecha_objetivo }
+    else:
+        fechas_objetivo = { (datetime.now().date() + timedelta(i)) for i in range(7) }
+    
     print("\n🔍 Buscando eventos culturales...")
     eventos = []
     print("🔍 Obteniendo eventos en Oviedo")
     eventos += get_events_oviedo()
     print("🔍 Obteniendo eventos en Gijón")
-    eventos += get_events_gijon()
+    eventos += get_events_gijon(fechas_objetivo)
     print("🔍 Obteniendo eventos en Mieres")
-    eventos += get_events_mieres()
+    eventos += get_events_mieres(fechas_objetivo)
     print("🔍 Obteniendo eventos en Avilés")
-    eventos += get_events_aviles()
+    eventos += get_events_aviles(fechas_objetivo)
     print("🔍 Obteniendo Asturies cultura")
-    eventos += get_events_asturiescultura()
+    eventos += get_events_asturiescultura(fechas_objetivo)
     print("🔍 Obteniendo eventos en Siero")
     eventos += get_events_siero()
     print("🔍 Obteniendo conciertos")
@@ -887,34 +894,34 @@ def obtener_eventos():
     print("🔍 Obteniendo eventos laboral")
 
     print("🔍 Obteniendo eventos desde la API de FiestasAsturias")
-    eventos += get_events_fiestas_api()
+    eventos += get_events_fiestas_api(fechas_objetivo)
 
     print("🔍 Obteniendo eventos en Asturtur")
     eventos += get_events_asturtur()
 
     if eventos:
         df = pd.DataFrame(eventos)
-        
-        fecha_obj_dt = pd.to_datetime(fecha_objetivo)
 
         # Convertir fecha y fecha_fin a datetime, manejando tanto tz-aware como tz-naive
-        df["fecha"] = (
-            pd.to_datetime(df["fecha"], errors='coerce', utc=True)
-              .dt.tz_localize(None)
-        )
-
+        df["fecha"] = pd.to_datetime(df["fecha"], errors='coerce', utc=True).dt.tz_localize(None)
         if "fecha_fin" in df.columns:
-            df["fecha_fin"] = (
-                pd.to_datetime(df["fecha_fin"], errors='coerce', utc=True)
-                  .dt.tz_localize(None)
-            )
+            df["fecha_fin"] = pd.to_datetime(df["fecha_fin"], errors='coerce', utc=True).dt.tz_localize(None)
         else:
             df["fecha_fin"] = pd.NaT
 
+        # Eliminar duplicados por título+fecha de inicio (por si alguna fuente los repite)
+        df.drop_duplicates(subset=["evento", "fecha"], inplace=True)
+
         # Filtrar por la fecha objetivo
         df_filtrado = df[
-            (df["fecha"].dt.date == fecha_obj_dt.date()) |
-            ((df["fecha"] <= fecha_obj_dt) & (df["fecha_fin"] >= fecha_obj_dt))
+            df.apply(
+                lambda row: any(
+                    (row["fecha"].date() <= f <= row["fecha_fin"].date() if pd.notnull(row["fecha_fin"])
+                     else row["fecha"].date() == f)
+                    for f in fechas_objetivo
+                ),
+                axis=1
+            )
         ].copy()
 
         # Inferir disciplinas si faltan
@@ -928,7 +935,7 @@ def obtener_eventos():
         df_filtrado["fecha_fin"] = df_filtrado["fecha_fin"].dt.strftime("%d/%m/%Y")
         
         if not df_filtrado.empty:
-            print(f"\n✅ Se encontraron {len(df_filtrado)} eventos para el día {fecha_objetivo}:")
+            print(f"\n✅ Se encontraron {len(df_filtrado)} eventos para el día {}:")
             # Versión visual con HTML puro para Jupyter
             df_vis = df_filtrado.copy()
 
@@ -953,7 +960,7 @@ def obtener_eventos():
             # Mostrar sin índice
             #display(HTML(df_vis.to_html(escape=False, index=False)))
         else:
-            print(f"⚠️ No se encontraron eventos para el día {fecha_objetivo}.")
+            print(f"⚠️ No se encontraron eventos para el día {}.")
     else:
         print("❌ No se encontraron eventos.")
     
