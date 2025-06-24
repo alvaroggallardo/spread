@@ -106,21 +106,23 @@ def get_events_oviedo(fechas_objetivo):
 # Scraping Gijón desde la API AJAX
 # --------------------------
 def get_events_gijon(fechas_objetivo):
-    
     url = "https://www.gijon.es/es/eventos"
     events = []
     driver = get_selenium_driver(headless=True)
-    
+
     try:
+        print("🌀 [Gijón] Cargando página...")
         driver.get(url)
         time.sleep(5)
         soup = BeautifulSoup(driver.page_source, "html.parser")
         items = soup.select("div.col-lg-4.col-md-6.col-12")
+        print(f"📦 [Gijón] {len(items)} eventos encontrados en la web.")
 
-        for item in items:
+        for idx, item in enumerate(items):
             title_el = item.select_one("div.tituloEventos a")
             title = title_el.text.strip() if title_el else "Sin título"
             link = "https://www.gijon.es" + title_el["href"] if title_el else ""
+            print(f"🔹 [{idx}] Título: {title}")
 
             # Fecha (puede ser simple o rango)
             date_text = ""
@@ -128,6 +130,7 @@ def get_events_gijon(fechas_objetivo):
                 if "Fechas:" in span.text:
                     date_text = span.text.replace("Fechas:", "").strip()
                     break
+            print(f"    📅 Fecha cruda: {date_text}")
 
             fecha_evento = None
             incluir = False
@@ -136,19 +139,30 @@ def get_events_gijon(fechas_objetivo):
                 fechas = date_text.replace("Entre el", "").replace("del", "").split(" y el ")
                 inicio = dateparser.parse(fechas[0].strip(), languages=["es"])
                 fin = dateparser.parse(fechas[1].strip(), languages=["es"])
+                print(f"    ➡️ Rango: {inicio.date()} a {fin.date()}")
+
                 if inicio and fin:
                     for f in fechas_objetivo:
+                        print(f"      🔍 Comparando con objetivo: {f}")
                         if inicio.date() <= f <= fin.date():
                             fecha_evento = f
                             incluir = True
+                            print("      ✅ Dentro del rango")
                             break
             else:
                 fecha_parseada = dateparser.parse(date_text, languages=["es"])
-                if fecha_parseada and fecha_parseada.date() in fechas_objetivo:
-                    fecha_evento = fecha_parseada
-                    incluir = True
+                print(f"    ➡️ Fecha única parseada: {fecha_parseada}")
+                if fecha_parseada:
+                    for f in fechas_objetivo:
+                        print(f"      🔍 Comparando con objetivo: {f}")
+                        if fecha_parseada.date() == f:
+                            fecha_evento = fecha_parseada
+                            incluir = True
+                            print("      ✅ Fecha exacta coincide")
+                            break
 
             if not incluir or not fecha_evento:
+                print("    ❌ Evento fuera de rango, descartado.")
                 continue
 
             # Hora
@@ -157,6 +171,7 @@ def get_events_gijon(fechas_objetivo):
                 if "Horario:" in span.text:
                     hora_text = span.text.replace("Horario:", "").strip()
                     break
+            print(f"    🕒 Hora: {hora_text}")
 
             # Lugar
             location_el = item.select_one("span.localizacion a")
@@ -170,12 +185,16 @@ def get_events_gijon(fechas_objetivo):
                 "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location)}", "{location}")',
                 "link": link
             })
+            print("    ✅ Evento añadido.")
+
+        print(f"🎉 [Gijón] Total eventos válidos para fecha(s) objetivo: {len(events)}")
     except Exception as e:
-        print(f"❌ Error en Gijón: {e}")
+        print(f"❌ [Gijón] Error general: {e}")
     finally:
         driver.quit()
 
     return events
+
 
 def get_events_mieres(fechas_objetivo):
     url = "https://www.mieres.es/cultura/"
