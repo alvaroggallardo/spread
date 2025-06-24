@@ -145,7 +145,7 @@ def get_events_gijon(fechas_objetivo):
                     for f in fechas_objetivo:
                         print(f"      🔍 Comparando con objetivo: {f}")
                         if inicio.date() <= f <= fin.date():
-                            fecha_evento = f
+                            fecha_evento = inicio  # 👈 Aquí está la corrección: NO usar f
                             incluir = True
                             print("      ✅ Dentro del rango")
                             break
@@ -156,7 +156,7 @@ def get_events_gijon(fechas_objetivo):
                     for f in fechas_objetivo:
                         print(f"      🔍 Comparando con objetivo: {f}")
                         if fecha_parseada.date() == f:
-                            fecha_evento = fecha_parseada
+                            fecha_evento = fecha_parseada  # 👈 Corregido
                             incluir = True
                             print("      ✅ Fecha exacta coincide")
                             break
