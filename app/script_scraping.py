@@ -935,7 +935,7 @@ def obtener_eventos(fecha_objetivo=None):
         df_filtrado["fecha_fin"] = df_filtrado["fecha_fin"].dt.strftime("%d/%m/%Y")
         
         if not df_filtrado.empty:
-            print(f"\n✅ Se encontraron {len(df_filtrado)} eventos para el día {}:")
+            print(f"\n✅ Se encontraron {len(df_filtrado)} eventos para los días {sorted(fechas_objetivo)}:")
             # Versión visual con HTML puro para Jupyter
             df_vis = df_filtrado.copy()
 
