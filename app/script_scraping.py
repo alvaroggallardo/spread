@@ -161,8 +161,8 @@ def get_events_gijon(fechas_objetivo):
                             print("      ✅ Fecha exacta coincide")
                             break
 
-            if not incluir or not fecha_evento:
-                print("    ❌ Evento fuera de rango, descartado.")
+            if not fecha_evento:
+                print("    ❌ No se pudo determinar la fecha del evento, descartado.")
                 continue
 
             # Hora
@@ -982,16 +982,17 @@ def obtener_eventos(fecha_objetivo=None):
         df.drop_duplicates(subset=["evento", "fecha"], inplace=True)
 
         # Filtrar por la fecha objetivo
-        df_filtrado = df[
-            df.apply(
-                lambda row: any(
-                    (row["fecha"].date() <= f <= row["fecha_fin"].date() if pd.notnull(row["fecha_fin"])
-                     else row["fecha"].date() == f)
-                    for f in fechas_objetivo
-                ),
-                axis=1
-            )
-        ].copy()
+        def esta_en_rango(row, fechas_objetivo):
+            fecha_inicio = row["fecha"].date() if pd.notnull(row["fecha"]) else None
+            fecha_fin = row["fecha_fin"].date() if pd.notnull(row["fecha_fin"]) else None
+
+            if fecha_inicio and not fecha_fin:
+                return fecha_inicio in fechas_objetivo
+            elif fecha_inicio and fecha_fin:
+                return any(fecha_inicio <= f <= fecha_fin for f in fechas_objetivo)
+            return False
+
+        df_filtrado = df[df.apply(lambda row: esta_en_rango(row, fechas_objetivo), axis=1)].copy()
 
         # Inferir disciplinas si faltan
         df_filtrado.loc[:, "disciplina"] = df_filtrado.apply(
