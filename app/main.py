@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from app.models import Evento, SessionLocal, init_db
 from app.save_events import guardar_eventos
