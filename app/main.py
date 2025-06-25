@@ -32,22 +32,12 @@ def obtener_eventos():
     return JSONResponse(content=jsonable_encoder(eventos))
 
 @app.post("/scrap", summary="Scrapear eventos")
-def scrapear_semana():
-    total_insertados = 0
-    errores = []
-
-    for i in range(7):
-        fecha_objetivo = (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d")
-        try:
-            nuevos = guardar_eventos(fecha_objetivo)
-            total_insertados += nuevos
-        except Exception as e:
-            errores.append(f"{fecha_objetivo}: {str(e)}")
-
-    if errores:
-        raise HTTPException(status_code=500, detail={"errores": errores, "insertados": total_insertados})
-    
-    return {"status": "OK", "insertados": total_insertados}
+def scrapear():
+    try:
+        total_insertados = guardar_eventos()
+        return {"status": "OK", "insertados": total_insertados}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/borrar-eventos", summary="Vaciar la tabla eventos")
 def borrar_eventos():
