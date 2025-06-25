@@ -7,6 +7,9 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime
 from urllib.parse import quote_plus
 #from IPython.display import display, HTML
@@ -106,7 +109,6 @@ def get_events_oviedo(fechas_objetivo):
 # Scraping Gijón desde la API AJAX
 # --------------------------
 def get_events_gijon():
-    
     url = "https://www.gijon.es/es/eventos"
     events = []
     driver = get_selenium_driver(headless=True)
@@ -114,7 +116,21 @@ def get_events_gijon():
     try:
         print("🌀 [Gijón] Cargando página...")
         driver.get(url)
-        time.sleep(5)
+
+        # ⏳ Esperar que aparezca el botón (Todos)
+        WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), '(Todos)')]"))
+        )
+
+        # 👉 Hacer clic en el botón (Todos)
+        print("🖱️ Pulsando botón '(Todos)'...")
+        todos_btn = driver.find_element(By.XPATH, "//a[contains(text(), '(Todos)')]")
+        todos_btn.click()
+
+        # Esperar a que carguen los nuevos resultados (ajusta si necesario)
+        time.sleep(4)
+
+        # Parsear HTML actualizado
         soup = BeautifulSoup(driver.page_source, "html.parser")
         items = soup.select("div.col-lg-4.col-md-6.col-12")
         print(f"📦 [Gijón] {len(items)} eventos encontrados en la web.")
