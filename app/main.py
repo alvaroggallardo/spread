@@ -31,7 +31,7 @@ def obtener_eventos():
     db.close()
     return JSONResponse(content=jsonable_encoder(eventos))
 
-@app.post("/scrap", summary="Scrapear eventos de los próximos 7 días")
+@app.post("/scrap", summary="Scrapear eventos")
 def scrapear_semana():
     total_insertados = 0
     errores = []

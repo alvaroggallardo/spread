@@ -24,27 +24,31 @@ def evento_ya_existe(db, ev):
         )
     ).first() is not None
 
-def guardar_eventos(fecha_objetivo=None):
+def guardar_eventos(scrapers=None):
     init_db()
     db = SessionLocal()
 
-    eventos = obtener_eventos(fecha_objetivo)
-    
+    if scrapers is None:
+        from app.script_scraping import get_events_gijon
+        scrapers = [get_events_gijon]
+
     nuevos = 0
-    for ev in eventos:
-        if not evento_ya_existe(db, ev):
-            nuevo = Evento(
-                fuente=ev.get("fuente"),
-                evento=ev.get("evento"),
-                fecha=parse_date_safe(ev.get("fecha")),
-                fecha_fin=parse_date_safe(ev.get("fecha_fin")),
-                hora=ev.get("hora"),
-                lugar=ev.get("lugar"),
-                link=ev.get("link"),
-                disciplina=ev.get("disciplina")
-            )
-            db.add(nuevo)
-            nuevos += 1
+    for scraper in scrapers:
+        eventos = scraper()
+        for ev in eventos:
+            if not evento_ya_existe(db, ev):
+                nuevo = Evento(
+                    fuente=ev.get("fuente"),
+                    evento=ev.get("evento"),
+                    fecha=parse_date_safe(ev.get("fecha")),
+                    fecha_fin=parse_date_safe(ev.get("fecha_fin")) if "fecha_fin" in ev else None,
+                    hora=ev.get("hora"),
+                    lugar=ev.get("lugar"),
+                    link=ev.get("link"),
+                    disciplina=ev.get("disciplina", None)
+                )
+                db.add(nuevo)
+                nuevos += 1
 
     db.commit()
     db.close()

@@ -105,7 +105,8 @@ def get_events_oviedo(fechas_objetivo):
 # --------------------------
 # Scraping Gijón desde la API AJAX
 # --------------------------
-def get_events_gijon(fechas_objetivo):
+def get_events_gijon():
+    
     url = "https://www.gijon.es/es/eventos"
     events = []
     driver = get_selenium_driver(headless=True)
@@ -124,45 +125,15 @@ def get_events_gijon(fechas_objetivo):
             link = "https://www.gijon.es" + title_el["href"] if title_el else ""
             print(f"🔹 [{idx}] Título: {title}")
 
-            # Fecha (puede ser simple o rango)
+            # Fecha
             date_text = ""
             for span in item.select("span"):
                 if "Fechas:" in span.text:
                     date_text = span.text.replace("Fechas:", "").strip()
                     break
-            print(f"    📅 Fecha cruda: {date_text}")
-
-            fecha_evento = None
-            incluir = False
-
-            if "Entre el" in date_text and "y el" in date_text:
-                fechas = date_text.replace("Entre el", "").replace("del", "").split(" y el ")
-                inicio = dateparser.parse(fechas[0].strip(), languages=["es"])
-                fin = dateparser.parse(fechas[1].strip(), languages=["es"])
-                print(f"    ➡️ Rango: {inicio.date()} a {fin.date()}")
-
-                if inicio and fin:
-                    for f in fechas_objetivo:
-                        print(f"      🔍 Comparando con objetivo: {f}")
-                        if inicio.date() <= f <= fin.date():
-                            fecha_evento = inicio  # 👈 Aquí está la corrección: NO usar f
-                            incluir = True
-                            print("      ✅ Dentro del rango")
-                            break
-            else:
-                fecha_parseada = dateparser.parse(date_text, languages=["es"])
-                print(f"    ➡️ Fecha única parseada: {fecha_parseada}")
-                if fecha_parseada:
-                    for f in fechas_objetivo:
-                        print(f"      🔍 Comparando con objetivo: {f}")
-                        if fecha_parseada.date() == f:
-                            fecha_evento = fecha_parseada  # 👈 Corregido
-                            incluir = True
-                            print("      ✅ Fecha exacta coincide")
-                            break
-
+            fecha_evento = dateparser.parse(date_text, languages=["es"])
             if not fecha_evento:
-                print("    ❌ No se pudo determinar la fecha del evento, descartado.")
+                print("❌ Fecha no reconocida, descartado.")
                 continue
 
             # Hora
@@ -171,11 +142,12 @@ def get_events_gijon(fechas_objetivo):
                 if "Horario:" in span.text:
                     hora_text = span.text.replace("Horario:", "").strip()
                     break
-            print(f"    🕒 Hora: {hora_text}")
 
             # Lugar
             location_el = item.select_one("span.localizacion a")
             location = location_el.text.strip() if location_el else "Gijón"
+
+            disciplina = inferir_disciplina(title)
 
             events.append({
                 "fuente": "Gijón",
@@ -183,11 +155,10 @@ def get_events_gijon(fechas_objetivo):
                 "fecha": fecha_evento,
                 "hora": hora_text,
                 "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location)}", "{location}")',
-                "link": link
+                "link": link,
+                "disciplina": disciplina
             })
-            print("    ✅ Evento añadido.")
-
-        print(f"🎉 [Gijón] Total eventos válidos para fecha(s) objetivo: {len(events)}")
+            print("✅ Añadido.")
     except Exception as e:
         print(f"❌ [Gijón] Error general: {e}")
     finally:
@@ -874,164 +845,3 @@ def inferir_disciplina(titulo):
         return "Eventos"
     else:
         return "Otros"
-# --------------------------
-# EJECUCIÓN
-# --------------------------
-
-#print("📍 Buscando ciudad a partir de coordenadas...")
-#ciudad = geocode_coordinates(lat, lon)
-#print(f"✅ Ciudad detectada: {ciudad}")
-
-def obtener_eventos(fecha_objetivo=None):
-    
-    if fecha_objetivo:
-        fechas_objetivo = { fecha_objetivo }
-    else:
-        fechas_objetivo = { (datetime.now().date() + timedelta(i)) for i in range(7) }
-    
-    print("\n🔍 Buscando eventos culturales...")
-    eventos = []
-    
-    try:
-        print("🔍 Obteniendo eventos Oviedo")
-        #eventos += get_events_oviedo(fechas_objetivo)
-    except Exception as e:
-        print(f"❌ Error al obtener eventos de Oviedo: {e}")
-    
-    try:
-        print("🔍 Obteniendo eventos Gijón")
-        eventos += get_events_gijon(fechas_objetivo)
-    except Exception as e:
-        print(f"❌ Error al obtener eventos de Gijón: {e}")
-    
-    try:
-        print("🔍 Obteniendo eventos Mieres")
-        #eventos += get_events_mieres(fechas_objetivo)
-    except Exception as e:
-        print(f"❌ Error al obtener eventos de Mieres: {e}")
-    
-    try:
-        print("🔍 Obteniendo eventos Avilés")
-        #eventos += get_events_aviles(fechas_objetivo)
-    except Exception as e:
-        print(f"❌ Error al obtener eventos de Avilés: {e}")
-    
-    try:
-        print("🔍 Obteniendo eventos asturiescultura")
-        #eventos += get_events_asturiescultura(fechas_objetivo)
-    except Exception as e:
-        print(f"❌ Error al obtener eventos de asturiescultura: {e}")
-    
-    try:
-        print("🔍 Obteniendo eventos Siero")
-        #eventos += get_events_siero(fechas_objetivo)
-    except Exception as e:
-        print(f"❌ Error al obtener eventos de Siero: {e}")
-    
-    try:
-        print("🔍 Obteniendo eventos conciertosclub")
-        #eventos += get_events_conciertosclub(fechas_objetivo)
-    except Exception as e:
-        print(f"❌ Error al obtener eventos de conciertosclub: {e}")
-    
-    tematicas = [
-        "gastronomia", "museos", "fiestas", "cine-y-espectaculos",
-        "deporte", "ocio-infantil", "rutas-y-visitas-guiadas", "ferias-mercados"
-    ]
-
-    try:
-        print("🔍 Obteniendo eventos tematicas")
-        #eventos += obtener_eventos_por_tematica(tematicas,fechas_objetivo)
-    except Exception as e:
-        print(f"❌ Error al obtener eventos de tematicas: {e}")
-    
-    # Unificar fechas para todos los eventos (necesario para compatibilidad con el filtrado)
-    for ev in eventos:
-        if "fecha" not in ev and "fecha_inicio" in ev:
-            ev["fecha"] = ev["fecha_inicio"]
-
-    try:
-        print("🔍 Obteniendo eventos Laboral")
-        #eventos += get_events_laboral(fechas_objetivo)
-    except Exception as e:
-        print(f"❌ Error al obtener eventos de Laboral: {e}")
-    
-    try:
-        print("🔍 Obteniendo eventos FiestasAsturias")
-        #eventos += get_events_fiestas_api(fechas_objetivo)
-    except Exception as e:
-        print(f"❌ Error al obtener eventos de FiestasAsturias: {e}")
-
-    try:
-        print("🔍 Obteniendo eventos Asturtur")
-        #eventos += get_events_asturtur(fechas_objetivo)
-    except Exception as e:
-        print(f"❌ Error al obtener eventos de Asturtur: {e}")
-
-    if eventos:
-        df = pd.DataFrame(eventos)
-
-        # Convertir fecha y fecha_fin a datetime, manejando tanto tz-aware como tz-naive
-        df["fecha"] = pd.to_datetime(df["fecha"], errors='coerce', utc=True).dt.tz_localize(None)
-        if "fecha_fin" in df.columns:
-            df["fecha_fin"] = pd.to_datetime(df["fecha_fin"], errors='coerce', utc=True).dt.tz_localize(None)
-        else:
-            df["fecha_fin"] = pd.NaT
-
-        # Eliminar duplicados por título+fecha de inicio (por si alguna fuente los repite)
-        df.drop_duplicates(subset=["evento", "fecha"], inplace=True)
-
-        # Filtrar por la fecha objetivo
-        def esta_en_rango(row, fechas_objetivo):
-            fecha_inicio = row["fecha"].date() if pd.notnull(row["fecha"]) else None
-            fecha_fin = row["fecha_fin"].date() if pd.notnull(row["fecha_fin"]) else None
-
-            if fecha_inicio and not fecha_fin:
-                return fecha_inicio in fechas_objetivo
-            elif fecha_inicio and fecha_fin:
-                return any(fecha_inicio <= f <= fecha_fin for f in fechas_objetivo)
-            return False
-
-        df_filtrado = df[df.apply(lambda row: esta_en_rango(row, fechas_objetivo), axis=1)].copy()
-
-        # Inferir disciplinas si faltan
-        df_filtrado.loc[:, "disciplina"] = df_filtrado.apply(
-            lambda row: row["disciplina"] if pd.notna(row.get("disciplina")) and row["disciplina"] else inferir_disciplina(row.get("evento", "")),
-            axis=1
-        )
-
-        # 👉 Convertir fechas al formato español solo para mostrar
-        df_filtrado["fecha"] = df_filtrado["fecha"].dt.strftime("%d/%m/%Y")
-        df_filtrado["fecha_fin"] = df_filtrado["fecha_fin"].dt.strftime("%d/%m/%Y")
-        
-        if not df_filtrado.empty:
-            print(f"\n✅ Se encontraron {len(df_filtrado)} eventos para los días {sorted(fechas_objetivo)}:")
-            # Versión visual con HTML puro para Jupyter
-            df_vis = df_filtrado.copy()
-
-            # Crear hipervínculo en el nombre del evento
-            if "link" in df_vis.columns:
-                df_vis["evento"] = df_vis.apply(
-                    lambda row: f'<a href="{row["link"]}" target="_blank">{row["evento"]}</a>', axis=1
-                )
-
-            # Eliminar el prefijo "marker " del lugar si existe
-            df_vis["lugar"] = df_vis["lugar"].str.replace("marker ", "", regex=False)
-            df_vis["lugar"] = df_vis["lugar"].replace('marker', ' - ')  # Valor por defecto si solo queda "marker"
-            
-            # Convertir la columna lugar en hipervínculo
-            df_vis["lugar"] = df_vis["lugar"].apply(
-                lambda x: x.replace('=HYPERLINK("', '<a href="').replace('", "', '">').replace('")', '</a>')
-            )
-
-            # Eliminar la columna de enlace, ya incluida
-            df_vis = df_vis.drop(columns=["link"])
-
-            # Mostrar sin índice
-            #display(HTML(df_vis.to_html(escape=False, index=False)))
-        else:
-            print(f"⚠️ No se encontraron eventos para los días {sorted(fechas_objetivo)}.")
-    else:
-        print("❌ No se encontraron eventos.")
-    
-    return df_filtrado.to_dict(orient="records") if not df_filtrado.empty else []
