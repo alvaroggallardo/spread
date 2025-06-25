@@ -105,7 +105,7 @@ def get_events_oviedo(fechas_objetivo):
 # --------------------------
 # Scraping Gijón desde la API AJAX
 # --------------------------
-def get_events_gijon(max_pages=20:
+def get_events_gijon(max_pages=50):
     base_url = "https://www.gijon.es/es/eventos?pag="
     events = []
 
