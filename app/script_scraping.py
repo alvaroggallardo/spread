@@ -7,9 +7,6 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime
 from urllib.parse import quote_plus
 #from IPython.display import display, HTML
@@ -108,79 +105,74 @@ def get_events_oviedo(fechas_objetivo):
 # --------------------------
 # Scraping Gijón desde la API AJAX
 # --------------------------
-def get_events_gijon():
-    url = "https://www.gijon.es/es/eventos"
+def get_events_gijon(max_pages=10):
+    base_url = "https://www.gijon.es/es/eventos?pag="
     events = []
-    driver = get_selenium_driver(headless=True)
 
-    try:
-        print("🌀 [Gijón] Cargando página...")
-        driver.get(url)
+    for page in range(1, max_pages + 1):
+        url = f"{base_url}{page}&"
+        print(f"🌐 Cargando página {page}: {url}")
+        driver = get_selenium_driver(headless=True)
 
-        # ⏳ Esperar que aparezca el botón (Todos)
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), '(Todos)')]"))
-        )
+        try:
+            driver.get(url)
+            time.sleep(2)  # suficiente para carga estática
+            soup = BeautifulSoup(driver.page_source, "html.parser")
+            items = soup.select("div.col-lg-4.col-md-6.col-12")
+            print(f"📦 Página {page}: {len(items)} eventos encontrados")
 
-        # 👉 Hacer clic en el botón (Todos)
-        print("🖱️ Pulsando botón '(Todos)'...")
-        todos_btn = driver.find_element(By.XPATH, "//a[contains(text(), '(Todos)')]")
-        todos_btn.click()
+            if not items:
+                print("🚫 No más eventos, parada anticipada.")
+                break
 
-        # Esperar a que carguen los nuevos resultados (ajusta si necesario)
-        time.sleep(4)
+            for idx, item in enumerate(items):
+                title_el = item.select_one("div.tituloEventos a")
+                title = title_el.text.strip() if title_el else "Sin título"
+                link = "https://www.gijon.es" + title_el["href"] if title_el else ""
+                print(f"🔹 [{idx}] Título: {title}")
 
-        # Parsear HTML actualizado
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        items = soup.select("div.col-lg-4.col-md-6.col-12")
-        print(f"📦 [Gijón] {len(items)} eventos encontrados en la web.")
+                # Fecha
+                date_text = ""
+                for span in item.select("span"):
+                    if "Fechas:" in span.text:
+                        date_text = span.text.replace("Fechas:", "").strip()
+                        break
+                fecha_evento = dateparser.parse(date_text, languages=["es"])
+                if not fecha_evento:
+                    print("❌ Fecha no reconocida, descartado.")
+                    continue
 
-        for idx, item in enumerate(items):
-            title_el = item.select_one("div.tituloEventos a")
-            title = title_el.text.strip() if title_el else "Sin título"
-            link = "https://www.gijon.es" + title_el["href"] if title_el else ""
-            print(f"🔹 [{idx}] Título: {title}")
+                # Hora
+                hora_text = ""
+                for span in item.select("span"):
+                    if "Horario:" in span.text:
+                        hora_text = span.text.replace("Horario:", "").strip()
+                        break
 
-            # Fecha
-            date_text = ""
-            for span in item.select("span"):
-                if "Fechas:" in span.text:
-                    date_text = span.text.replace("Fechas:", "").strip()
-                    break
-            fecha_evento = dateparser.parse(date_text, languages=["es"])
-            if not fecha_evento:
-                print("❌ Fecha no reconocida, descartado.")
-                continue
+                # Lugar
+                location_el = item.select_one("span.localizacion a")
+                location = location_el.text.strip() if location_el else "Gijón"
 
-            # Hora
-            hora_text = ""
-            for span in item.select("span"):
-                if "Horario:" in span.text:
-                    hora_text = span.text.replace("Horario:", "").strip()
-                    break
+                disciplina = inferir_disciplina(title)
 
-            # Lugar
-            location_el = item.select_one("span.localizacion a")
-            location = location_el.text.strip() if location_el else "Gijón"
+                events.append({
+                    "fuente": "Gijón",
+                    "evento": title,
+                    "fecha": fecha_evento,
+                    "hora": hora_text,
+                    "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location)}", "{location}")',
+                    "link": link,
+                    "disciplina": disciplina
+                })
+                print("✅ Añadido.")
+        except Exception as e:
+            print(f"❌ [Gijón][Página {page}] Error: {e}")
+        finally:
+            driver.quit()
 
-            disciplina = inferir_disciplina(title)
-
-            events.append({
-                "fuente": "Gijón",
-                "evento": title,
-                "fecha": fecha_evento,
-                "hora": hora_text,
-                "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location)}", "{location}")',
-                "link": link,
-                "disciplina": disciplina
-            })
-            print("✅ Añadido.")
-    except Exception as e:
-        print(f"❌ [Gijón] Error general: {e}")
-    finally:
-        driver.quit()
-
+    print(f"🎉 Total eventos Gijón: {len(events)}")
     return events
+
 
 
 def get_events_mieres(fechas_objetivo):
