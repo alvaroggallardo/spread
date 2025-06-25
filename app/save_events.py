@@ -1,4 +1,3 @@
-from app.script_scraping import obtener_eventos
 from app.models import Evento, SessionLocal, init_db
 from datetime import datetime
 from sqlalchemy import and_
