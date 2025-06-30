@@ -1,3 +1,9 @@
+# app/schemas.py
+
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+
 class EventoSchema(BaseModel):
     id: int
     fuente: Optional[str] = None
