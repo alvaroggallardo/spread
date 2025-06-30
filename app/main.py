@@ -1,13 +1,22 @@
-import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import JSONResponse
+from sqlalchemy import inspect
+from sqlalchemy.orm import Session
+from typing import List, Optional
 from app.models import Evento, SessionLocal, init_db
 from app.save_events import guardar_eventos
-from fastapi.encoders import jsonable_encoder
-from sqlalchemy import inspect
-from datetime import datetime, timedelta
+from app.schemas import EventoSchema
+from datetime import date
+import os
 
 app = FastAPI()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 @app.get("/check-tabla-eventos", summary="Comprobar si existe la tabla eventos", description="Devuelve true/false según la existencia de la tabla en la base de datos")
 def check_tabla_eventos():
@@ -24,12 +33,26 @@ def crear_tabla_eventos():
     Base.metadata.create_all(bind=engine)
     return {"status": "Tabla eventos creada"}
 
-@app.get("/eventos")
-def obtener_eventos():
-    db = SessionLocal()
-    eventos = db.query(Evento).all()
-    db.close()
-    return JSONResponse(content=jsonable_encoder(eventos))
+@app.get("/eventos", response_model=List[EventoSchema])
+def listar_eventos(
+    disciplina: Optional[str] = None,
+    fecha_inicio: Optional[date] = None,
+    fecha_fin: Optional[date] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(Evento)
+
+    if disciplina:
+        query = query.filter(Evento.disciplina == disciplina)
+    
+    if fecha_inicio and fecha_fin:
+        query = query.filter(Evento.fecha.between(fecha_inicio, fecha_fin))
+    elif fecha_inicio:
+        query = query.filter(Evento.fecha >= fecha_inicio)
+    elif fecha_fin:
+        query = query.filter(Evento.fecha <= fecha_fin)
+    
+    return query.all()
 
 @app.post("/scrap", summary="Scrapear eventos")
 def scrapear():
