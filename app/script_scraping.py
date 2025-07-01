@@ -187,29 +187,37 @@ def get_events_gijon(max_pages=100):
 
 
 # --------------------------
-# Scraping Mieres con Selenium
+# Scraping Mieres (sin filtro de fechas)
 # --------------------------
-def get_events_mieres(fechas_objetivo):
+def get_events_mieres():
+    from bs4 import BeautifulSoup
+    import time
+    from urllib.parse import quote_plus
+    import dateparser
+    from datetime import datetime
+
     url = "https://www.mieres.es/cultura/"
     events = []
     driver = get_selenium_driver(headless=True)
-    
+
     try:
         driver.get(url)
         time.sleep(5)
         soup = BeautifulSoup(driver.page_source, "html.parser")
         items = soup.select("div.tribe-mini-calendar-event")
 
-        for item in items:
+        print(f"📦 Encontrados {len(items)} eventos en Mieres")
+
+        for idx, item in enumerate(items):
             # Título y enlace
             title_el = item.select_one("h2.tribe-events-title a")
             title = title_el.text.strip() if title_el else "Sin título"
             link = title_el["href"] if title_el and title_el.has_attr("href") else url
+            print(f"🔹 [{idx}] Título: {title}")
 
             # Fecha y hora
             date_el = item.select_one("span.tribe-event-date-start")
             raw_fecha = date_el.text.strip() if date_el else ""
-            
             if "-" in raw_fecha:
                 partes = raw_fecha.split("-")
                 fecha_txt = partes[0].strip()
@@ -218,15 +226,16 @@ def get_events_mieres(fechas_objetivo):
                 fecha_txt = raw_fecha
                 hora_txt = ""
 
-            parsed_date = dateparser.parse(f"{fecha_txt} 2025", languages=["es"])
-            if not parsed_date or parsed_date.date() not in fechas_objetivo:
+            parsed_date = dateparser.parse(f"{fecha_txt} {datetime.now().year}", languages=["es"])
+            if not parsed_date:
+                print("❌ Fecha no reconocida, descartado.")
                 continue
 
             # Lugar
             lugar_el = item.select_one("span.lugar_evento a")
             lugar = lugar_el.text.strip() if lugar_el else "Mieres"
 
-            # Disciplina inferida
+            # Disciplina (usa tu función de inferencia si la tienes)
             disciplina = inferir_disciplina(title)
 
             events.append({
@@ -238,8 +247,9 @@ def get_events_mieres(fechas_objetivo):
                 "link": link,
                 "disciplina": disciplina
             })
-            print(f"✅ Añadido: {title}")
-            
+
+            print("✅ Añadido.")
+
     except Exception as e:
         print(f"❌ Error en Mieres: {e}")
     finally:
@@ -247,6 +257,7 @@ def get_events_mieres(fechas_objetivo):
 
     print(f"🎉 Total eventos Mieres: {len(events)}")
     return events
+
 
 
 
