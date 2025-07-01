@@ -186,10 +186,14 @@ def get_events_gijon(max_pages=100):
 
 
 
+# --------------------------
+# Scraping Mieres con Selenium
+# --------------------------
 def get_events_mieres(fechas_objetivo):
     url = "https://www.mieres.es/cultura/"
     events = []
     driver = get_selenium_driver(headless=True)
+    
     try:
         driver.get(url)
         time.sleep(5)
@@ -205,6 +209,7 @@ def get_events_mieres(fechas_objetivo):
             # Fecha y hora
             date_el = item.select_one("span.tribe-event-date-start")
             raw_fecha = date_el.text.strip() if date_el else ""
+            
             if "-" in raw_fecha:
                 partes = raw_fecha.split("-")
                 fecha_txt = partes[0].strip()
@@ -221,21 +226,28 @@ def get_events_mieres(fechas_objetivo):
             lugar_el = item.select_one("span.lugar_evento a")
             lugar = lugar_el.text.strip() if lugar_el else "Mieres"
 
+            # Disciplina inferida
+            disciplina = inferir_disciplina(title)
+
             events.append({
                 "fuente": "Mieres",
                 "evento": title,
                 "fecha": parsed_date,
                 "hora": hora_txt,
                 "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
-                "link": link
+                "link": link,
+                "disciplina": disciplina
             })
-
+            print(f"✅ Añadido: {title}")
+            
     except Exception as e:
         print(f"❌ Error en Mieres: {e}")
     finally:
         driver.quit()
 
+    print(f"🎉 Total eventos Mieres: {len(events)}")
     return events
+
 
 
 def get_events_asturiescultura(fechas_objetivo):
