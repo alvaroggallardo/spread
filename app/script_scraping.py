@@ -46,17 +46,16 @@ def get_selenium_driver(headless=True):
     return webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=options)
 
 # --------------------------
-# Scraping Oviedo con Selenium (estructurado)
+# Scraping Oviedo adaptado al modelo Gijón
 # --------------------------
-def get_events_oviedo(fechas_objetivo):
-    
+def get_events_oviedo(max_days_ahead=90):
     url = "https://www.visitoviedo.info/agenda"
     events = []
     driver = get_selenium_driver(headless=True)
-    
+
     try:
         driver.get(url)
-        time.sleep(5)  # Esperar a que cargue el contenido JS
+        time.sleep(5)  # esperar carga JS
 
         soup = BeautifulSoup(driver.page_source, "html.parser")
         day_entries = soup.select("div.day-entry")
@@ -71,7 +70,12 @@ def get_events_oviedo(fechas_objetivo):
                 date_str = f"{day_num} {month} {year}"
                 parsed_date = dateparser.parse(date_str, languages=['es'])
 
-            if not parsed_date or parsed_date.date() not in fechas_objetivo:
+            if not parsed_date:
+                continue
+
+            # Filtra solo fechas dentro de N días
+            delta_days = (parsed_date.date() - datetime.now().date()).days
+            if delta_days < 0 or delta_days > max_days_ahead:
                 continue
 
             for entry in day.select("div.entry"):
@@ -85,21 +89,28 @@ def get_events_oviedo(fechas_objetivo):
                 location = location_el.text.strip() if location_el else "Oviedo"
                 link = link_el["href"] if link_el and "href" in link_el.attrs else url
 
+                disciplina = inferir_disciplina(title)
+
                 events.append({
                     "fuente": "VisitOviedo",
                     "evento": title,
                     "fecha": parsed_date,
                     "hora": time_str,
                     "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location)}", "{location}")',
-                    "link": link
+                    "link": link,
+                    "disciplina": disciplina
                 })
+
+                print(f"✅ Oviedo: {title} ({parsed_date.date()})")
 
     except Exception as e:
         print(f"❌ Error en Oviedo: {e}")
     finally:
         driver.quit()
 
+    print(f"🎉 Total eventos Oviedo: {len(events)}")
     return events
+
 
 
 # --------------------------
