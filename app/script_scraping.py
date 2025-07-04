@@ -188,7 +188,7 @@ def get_events_gijon(max_pages=100):
 
 
 # --------------------------
-# Scraping Mieres desde página nueva de calendario
+# Scraping Mieres desde página nueva de calendario ics
 # --------------------------
 
 def get_events_mieres():
@@ -228,8 +228,7 @@ def get_events_mieres():
 
     print(f"🎉 Total eventos Mieres (ICS): {len(events)}")
 
-    df = pd.DataFrame(events)
-    return df
+    return events
 
 # --------------------------
 # Scraping Asturias Cultura
