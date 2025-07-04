@@ -191,99 +191,90 @@ def get_events_gijon(max_pages=100):
 # --------------------------
 
 def get_events_mieres():
-    url = "https://www.mieres.es/eventos/"
+    url_ajax = "https://www.mieres.es/wp-admin/admin-ajax.php"
+    
+    payload = {
+        "action": "tribe_event_query",
+        "tribe_event_display": "list",
+        "tribe-bar-date": datetime.now().strftime("%Y-%m-%d")
+    }
+
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    }
+
+    response = requests.post(url_ajax, data=payload, headers=headers)
+
+    if response.status_code != 200:
+        print("❌ Error en petición AJAX:", response.status_code)
+        return []
+
+    data = response.json()
+
+    html_events = data.get("html", "")
+
+    soup = BeautifulSoup(html_events, "html.parser")
+
+    items = soup.select("div[id^='tribe-events-event']")
+    print(f"📦 Encontrados {len(items)} eventos en HTML AJAX")
+
     events = []
-    driver = get_selenium_driver(headless=True)
 
-    try:
-        driver.get(url)
-        time.sleep(3)
+    for idx, item in enumerate(items):
+        data_json_str = item.get("data-tribejson", None)
+        if not data_json_str:
+            print(f"⚠️ [{idx}] Evento sin data-tribejson, saltado.")
+            continue
 
-        soup = BeautifulSoup(driver.page_source, "html.parser")
+        try:
+            data_json = json.loads(data_json_str)
 
-        # Primero, buscar normalmente
-        items = soup.select("div[id^='tribe-events-event']")
-        print(f"📦 Encontrados {len(items)} eventos en HTML principal")
+            title = data_json.get("title", "Sin título")
+            link = data_json.get("permalink", "")
+            print(f"🔹 [{idx}] Título: {title}")
 
-        # Si no encuentra nada, probar en comentarios
-        if len(items) == 0:
-            comments = soup.find_all(string=lambda text: isinstance(text, Comment))
-            for comment in comments:
-                inner_soup = BeautifulSoup(comment, "html.parser")
-                items = inner_soup.select("div[id^='tribe-events-event']")
-                if items:
-                    print(f"✅ Encontrados {len(items)} eventos en bloque comentado.")
-                    break
+            start_time_str = data_json.get("startTime", "")
+            fecha_evento = None
+            if start_time_str:
+                fecha_evento = dateparser.parse(
+                    start_time_str + f" {datetime.now().year}",
+                    languages=["es"]
+                )
 
-        for idx, item in enumerate(items):
-            data_json_str = item.get("data-tribejson", None)
-            if not data_json_str:
-                print(f"⚠️ [{idx}] Evento sin data-tribejson, saltado.")
+            if not fecha_evento:
+                print(f"❌ [{idx}] Fecha no reconocida, descartado.")
                 continue
 
-            try:
-                data_json = json.loads(data_json_str)
+            hora_text = ""
+            if "-" in start_time_str:
+                partes = start_time_str.split("-")
+                hora_text = partes[1].strip() if len(partes) > 1 else partes[0].strip()
+            else:
+                hora_text = start_time_str.strip()
 
-                # Título
-                title = data_json.get("title", "Sin título")
-                link = data_json.get("permalink", url)
-                print(f"🔹 [{idx}] Título: {title}")
+            lugar = "Mieres"
 
-                # Fecha
-                start_time_str = data_json.get("startTime", "")
-                fecha_evento = None
-                if start_time_str:
-                    # El startTime suele venir así → "01 julio-09:00" o "01 julio-09:00-14:00"
-                    fecha_evento = dateparser.parse(
-                        start_time_str + f" {datetime.now().year}",
-                        languages=["es"]
-                    )
+            disciplina = inferir_disciplina(title)
 
-                if not fecha_evento:
-                    print(f"❌ [{idx}] Fecha no reconocida, descartado.")
-                    continue
+            event_data = {
+                "fuente": "Mieres",
+                "evento": title,
+                "fecha": fecha_evento,
+                "hora": hora_text,
+                "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
+                "link": link,
+                "disciplina": disciplina
+            }
 
-                # Hora
-                hora_text = ""
-                if "-" in start_time_str:
-                    partes = start_time_str.split("-")
-                    hora_text = partes[1].strip() if len(partes) > 1 else partes[0].strip()
-                else:
-                    hora_text = start_time_str.strip()
+            events.append(event_data)
+            print("✅ Añadido.")
 
-                # Lugar
-                lugar = "Mieres"
-
-                # Disciplina
-                disciplina = inferir_disciplina(title)
-
-                # Generar el registro
-                event_data = {
-                    "fuente": "Mieres",
-                    "evento": title,
-                    "fecha": fecha_evento,
-                    "hora": hora_text,
-                    "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
-                    "link": link,
-                    "disciplina": disciplina
-                }
-
-                events.append(event_data)
-                print("✅ Añadido.")
-
-            except Exception as e:
-                print(f"❌ [{idx}] Error procesando evento: {e}")
-                continue
-
-    except Exception as e:
-        print(f"❌ Error global en Mieres: {e}")
-
-    finally:
-        driver.quit()
+        except Exception as e:
+            print(f"❌ [{idx}] Error procesando evento: {e}")
+            continue
 
     print(f"🎉 Total eventos Mieres: {len(events)}")
     return events
-
 
 # --------------------------
 # Scraping Asturias Cultura
