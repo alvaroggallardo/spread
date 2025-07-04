@@ -521,8 +521,8 @@ def get_events_siero():
 def get_events_conciertosclub():
     import requests
     from bs4 import BeautifulSoup
-    from urllib.parse import urljoin, quote_plus
     import dateparser
+    from urllib.parse import urljoin, quote_plus
 
     base_url = "https://conciertos.club"
     url = f"{base_url}/asturias"
@@ -534,62 +534,60 @@ def get_events_conciertosclub():
         res = requests.get(url, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # Buscar todos los bloques de días
-        titulas = soup.select("div.tit_wrap")
+        # Recorremos todos los articles (cada uno es un día)
+        articles = soup.select("section.conciertos article")
 
-        for titula in titulas:
-            # Extraer fecha textual
-            fecha_texto = titula.select_one("div.tit")
-            if not fecha_texto:
+        for article in articles:
+            # Leer la fecha del día
+            tit_wrap = article.select_one("div.tit_wrap > div.tit")
+            if not tit_wrap:
                 continue
 
-            fecha_str = fecha_texto.text.strip()
-
-            # Eliminar textos como "Hoy", "Mañana"
+            fecha_texto = tit_wrap.get_text(strip=True)
+            # Quitar Hoy, Mañana, etc.
             for palabra in ["Hoy", "Mañana"]:
-                if palabra in fecha_str:
-                    fecha_str = fecha_str.replace(palabra, "").strip()
+                if palabra in fecha_texto:
+                    fecha_texto = fecha_texto.replace(palabra, "").strip()
 
-            # parsear fecha
-            fecha_evento = dateparser.parse(fecha_str, languages=["es"])
+            fecha_evento = dateparser.parse(fecha_texto, languages=["es"])
             if not fecha_evento:
-                print(f"⚠️ No se pudo parsear fecha: {fecha_str}")
+                print(f"⚠️ No se pudo parsear fecha: {fecha_texto}")
                 continue
 
-            # encontrar la <ul class="list"> que le sigue
-            ul = titula.find_next_sibling("ul", class_="list")
-            if not ul:
-                continue
+            # Procesar los eventos de ese día
+            lis = article.select("ul.list > li")
 
-            eventos_li = ul.select("li[itemtype='http://schema.org/ListItem']")
-
-            for idx, li in enumerate(eventos_li):
+            for idx, li in enumerate(lis):
                 try:
                     music_event = li.select_one("div[itemtype='http://schema.org/MusicEvent']")
                     if not music_event:
                         continue
 
-                    # link y título
+                    # Título y link
                     enlace_el = music_event.select_one("a.nombre")
                     link = urljoin(base_url, enlace_el["href"]) if enlace_el else base_url
                     evento = enlace_el.get_text(strip=True) if enlace_el else "Sin título"
-                    print(f"🔹 [{idx}] Título: {evento}")
 
-                    # hora
+                    # Hora
                     hora = ""
                     time_div = music_event.select_one("div.time")
                     if time_div:
                         hora = time_div.get_text(strip=True)
 
-                    # lugar
+                    # Lugar
                     lugar_el = music_event.select_one("a.local")
                     lugar_text = lugar_el.get_text(strip=True) if lugar_el else "Asturias"
-                    lugar_nombre = lugar_text.split(".")[0].strip() if "." in lugar_text else lugar_text
+                    lugar_clean = lugar_text.split(".")[0].strip() if "." in lugar_text else lugar_text
+                    lugar_hyperlink = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar_clean)}", "{lugar_clean}")'
 
-                    lugar_hyperlink = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar_nombre)}", "{lugar_nombre}")'
-
-                    # disciplina: fija a Música
+                    # Disciplina
+                    estilo_span = music_event.select_one("span.estilo")
+                    disciplina_text = estilo_span.get_text(strip=True) if estilo_span else ""
                     disciplina = "Música"
+                    if disciplina_text:
+                        # Ejemplo: " / Pop-rock/Indie"
+                        partes = disciplina_text.strip("/").split("/")
+                        disciplina = partes[-1].strip() if partes else "Música"
 
                     eventos.append({
                         "fuente": "Conciertos.club",
@@ -598,21 +596,20 @@ def get_events_conciertosclub():
                         "hora": hora,
                         "lugar": lugar_hyperlink,
                         "link": link,
-                        "disciplina": disciplina
+                        "disciplina": disciplina or "Música"
                     })
 
-                    print("✅ Añadido.")
+                    print(f"✅ [{idx}] {evento} -> {fecha_evento} {hora}")
 
                 except Exception as e:
                     print(f"⚠️ [{idx}] Error procesando concierto: {e}")
                     continue
 
     except Exception as e:
-        print(f"❌ Error global accediendo a conciertos.club: {e}")
+        print(f"❌ Error accediendo a conciertos.club: {e}")
 
     print(f"🎉 Total conciertos importados: {len(eventos)}")
     return eventos
-
 
 
 
