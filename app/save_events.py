@@ -28,11 +28,12 @@ def guardar_eventos(scrapers=None):
     db = SessionLocal()
 
     if scrapers is None:
-        from app.script_scraping import get_events_gijon, get_events_oviedo, get_events_mieres
+        from app.script_scraping import get_events_gijon, get_events_oviedo, get_events_mieres, , get_events_asturiescultura
         scrapers = [
             #get_events_gijon, 
             #get_events_oviedo, 
-            get_events_mieres
+            get_events_mieres,
+            get_events_asturiescultura
             ]
 
     nuevos = 0

@@ -234,40 +234,53 @@ def get_events_mieres():
 # Scraping Asturias Cultura
 # --------------------------
 
-def get_events_asturiescultura(fechas_objetivo):
-    from urllib.parse import urljoin
+def get_events_asturiescultura(max_pages=20):
     base_url = "https://www.asturiesculturaenrede.es"
-    pages_to_check = 20
-    eventos = []
+    events = []
 
-    for page in range(1, pages_to_check + 1):
+    for page in range(1, max_pages + 1):
+        url = f"{base_url}/es/programacion/pag/{page}"
+        print(f"🌐 Cargando página {page}: {url}")
+
         try:
-            url = f"{base_url}/es/programacion/pag/{page}"
-            res = requests.get(url)
+            res = requests.get(url, timeout=10)
             if res.status_code != 200:
-                continue
+                print(f"🚫 Página {page} devuelve código {res.status_code}, parada.")
+                break
 
             soup = BeautifulSoup(res.text, "html.parser")
             items = soup.select("div.col_one_third")
+            print(f"📦 Página {page}: {len(items)} eventos encontrados")
+
             if not items:
+                print("🚫 No más eventos, parada anticipada.")
                 break
 
-            for e in items:
+            for idx, e in enumerate(items):
+                # Título y link
                 title_el = e.select_one("p.autor a")
                 title = title_el.text.strip() if title_el else "Sin título"
-                link = urljoin(base_url, title_el['href']) if title_el else url
+                link = urljoin(base_url, title_el['href']) if title_el else ""
 
+                print(f"🔹 [{idx}] Título: {title}")
+
+                # Fecha y lugar
                 strong_el = e.select_one("p.album strong")
                 if not strong_el or "|" not in strong_el.text:
+                    print(f"⚠️ [{idx}] Evento sin datos de fecha/lugar, saltado.")
                     continue
+
                 fecha_txt, municipio = strong_el.text.strip().split("|")
                 fecha_evento = dateparser.parse(fecha_txt.strip(), languages=["es"])
-                if not fecha_evento or fecha_evento.date() not in fechas_objetivo:
+                if not fecha_evento:
+                    print(f"❌ [{idx}] Fecha no reconocida, descartado.")
                     continue
 
                 lugar = municipio.strip()
+
+                # Extraer lugar más preciso del detalle
                 try:
-                    detalle = requests.get(link)
+                    detalle = requests.get(link, timeout=10)
                     if detalle.status_code == 200:
                         soup_detalle = BeautifulSoup(detalle.text, "html.parser")
                         ticket_icon = soup_detalle.select_one("i.icon-ticket")
@@ -280,26 +293,37 @@ def get_events_asturiescultura(fechas_objetivo):
                                     if lugar_p:
                                         lugar = lugar_p.get_text(strip=True)
                 except Exception as ex:
-                    print(f"⚠️ No se pudo extraer el lugar desde {link}: {ex}")
+                    print(f"⚠️ [{idx}] No se pudo extraer lugar desde {link}: {ex}")
 
+                # Disciplina
                 disciplina_el = e.select_one("p.album a")
-                disciplina = disciplina_el.text.strip() if disciplina_el else ""
+                disciplina_text = disciplina_el.text.strip() if disciplina_el else ""
+                disciplina = inferir_disciplina(f"{disciplina_text} {title}")
 
-                eventos.append({
+                # Hora (puede no haber)
+                hora_text = ""
+                if fecha_evento.hour or fecha_evento.minute:
+                    hora_text = fecha_evento.strftime("%H:%M")
+
+                events.append({
                     "fuente": "Asturies Cultura en Rede",
                     "evento": title,
                     "fecha": fecha_evento,
-                    "hora": fecha_evento.strftime("%H:%M") if fecha_evento.hour else "",
+                    "hora": hora_text,
                     "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
                     "link": link,
                     "disciplina": disciplina
                 })
 
+                print("✅ Añadido.")
         except Exception as e:
-            print(f"⚠️ Error en página {page}: {e}")
+            print(f"❌ [AsturiesCultura][Página {page}] Error: {e}")
             continue
 
-    return eventos
+        time.sleep(1)  # opcional, para no sobrecargar servidor
+
+    print(f"🎉 Total eventos Asturies Cultura en Rede: {len(events)}")
+    return events
 
 
 def get_events_aviles(fechas_objetivo):
