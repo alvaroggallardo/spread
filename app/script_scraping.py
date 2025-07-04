@@ -519,25 +519,28 @@ def get_events_siero():
 # --------------------------
 
 def get_events_conciertosclub():
-    import requests
-    from bs4 import BeautifulSoup
+    import time
     import dateparser
     from urllib.parse import urljoin, quote_plus
+    from bs4 import BeautifulSoup
+    from app.script_scraping import get_selenium_driver  # importa tu helper
 
-    base_url = "https://conciertos.club"
-    url = f"{base_url}/asturias"
-    eventos = []
+    base_url = "https://conciertos.club/asturias"
+    events = []
 
-    print(f"🌐 Cargando conciertos desde: {url}")
+    driver = get_selenium_driver(headless=True)
 
     try:
-        res = requests.get(url, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
+        driver.get(base_url)
+        time.sleep(4)  # deja cargar dinámicamente
+
+        soup = BeautifulSoup(driver.page_source, "html.parser")
 
         articles = soup.select("section.conciertos > article")
+        print(f"🔎 Encontrados {len(articles)} artículos (días)")
 
         for article_idx, article in enumerate(articles):
-            # Pillar la fecha del día
+            # Título del día
             tit_wrap = article.select_one("div.tit_wrap > div.tit")
             if not tit_wrap:
                 continue
@@ -549,8 +552,6 @@ def get_events_conciertosclub():
                 if palabra in fecha_texto:
                     fecha_texto = fecha_texto.replace(palabra, "").strip()
 
-            # Si la fecha sigue viniendo con el día de la semana, lo quitamos:
-            # Ej: "Domingo 6 de Julio"
             palabras = fecha_texto.split()
             if len(palabras) >= 2 and palabras[0].capitalize() in [
                 "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"
@@ -562,7 +563,6 @@ def get_events_conciertosclub():
                 print(f"⚠️ No se pudo parsear fecha: {fecha_texto}")
                 continue
 
-            # Pillar todos los conciertos de ese día
             lis = article.select("ul.list > li")
 
             for idx, li in enumerate(lis):
@@ -593,11 +593,10 @@ def get_events_conciertosclub():
                     disciplina_text = estilo_span.get_text(strip=True) if estilo_span else ""
                     disciplina = "Música"
                     if disciplina_text:
-                        # Ejemplo: " / Pop-rock/Indie"
                         partes = disciplina_text.strip("/").split("/")
                         disciplina = partes[-1].strip() if partes else "Música"
 
-                    eventos.append({
+                    events.append({
                         "fuente": "Conciertos.club",
                         "evento": evento,
                         "fecha": fecha_evento,
@@ -616,8 +615,11 @@ def get_events_conciertosclub():
     except Exception as e:
         print(f"❌ Error accediendo a conciertos.club: {e}")
 
-    print(f"🎉 Total conciertos importados: {len(eventos)}")
-    return eventos
+    finally:
+        driver.quit()
+
+    print(f"🎉 Total conciertos importados: {len(events)}")
+    return events
 
 
 
