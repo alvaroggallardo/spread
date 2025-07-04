@@ -196,11 +196,23 @@ def get_events_mieres():
 
     try:
         driver.get(url)
-        time.sleep(5)
+        time.sleep(3)
+
         soup = BeautifulSoup(driver.page_source, "html.parser")
 
+        # Primero, buscar normalmente
         items = soup.select("div[id^='tribe-events-event']")
-        print(f"📦 Encontrados {len(items)} eventos en Mieres")
+        print(f"📦 Encontrados {len(items)} eventos en HTML principal")
+
+        # Si no encuentra nada, probar en comentarios
+        if len(items) == 0:
+            comments = soup.find_all(string=lambda text: isinstance(text, Comment))
+            for comment in comments:
+                inner_soup = BeautifulSoup(comment, "html.parser")
+                items = inner_soup.select("div[id^='tribe-events-event']")
+                if items:
+                    print(f"✅ Encontrados {len(items)} eventos en bloque comentado.")
+                    break
 
         for idx, item in enumerate(items):
             data_json_str = item.get("data-tribejson", None)
@@ -211,12 +223,10 @@ def get_events_mieres():
             try:
                 data_json = json.loads(data_json_str)
 
-                # Título
                 title = data_json.get("title", "Sin título")
                 link = data_json.get("permalink", url)
                 print(f"🔹 [{idx}] Título: {title}")
 
-                # Fecha
                 start_time_str = data_json.get("startTime", "")
                 fecha_evento = None
                 if start_time_str:
@@ -229,7 +239,6 @@ def get_events_mieres():
                     print(f"❌ [{idx}] Fecha no reconocida, descartado.")
                     continue
 
-                # Hora
                 hora_text = ""
                 if "-" in start_time_str:
                     partes = start_time_str.split("-")
@@ -237,7 +246,6 @@ def get_events_mieres():
                 else:
                     hora_text = start_time_str.strip()
 
-                # Lugar (fijo a Mieres si no hay otro)
                 lugar = "Mieres"
 
                 disciplina = inferir_disciplina(title)
