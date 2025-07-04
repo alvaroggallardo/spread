@@ -519,13 +519,13 @@ def get_events_siero():
 # --------------------------
 
 def get_events_conciertosclub():
-    from urllib.parse import urljoin, quote_plus
     import requests
     from bs4 import BeautifulSoup
+    from urllib.parse import urljoin, quote_plus
     import dateparser
 
     base_url = "https://conciertos.club"
-    url = f"{base_url}/search.php?artist_id=&local_id=&provin_id=13&estilo_id=&fecha1=&fecha2="
+    url = f"{base_url}/asturias"
     eventos = []
 
     print(f"🌐 Cargando conciertos desde: {url}")
@@ -533,65 +533,86 @@ def get_events_conciertosclub():
     try:
         res = requests.get(url, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
-        conciertos = soup.select("li[itemtype='http://schema.org/MusicEvent']")
-        print(f"📦 Se encontraron {len(conciertos)} conciertos en conciertos.club")
 
-        for idx, concierto in enumerate(conciertos):
-            try:
-                # Título y enlace
-                enlace_el = concierto.select_one("a.nombre")
-                link = urljoin(base_url, enlace_el["href"]) if enlace_el else base_url
-                evento = enlace_el.get_text(strip=True) if enlace_el else "Sin título"
-                print(f"🔹 [{idx}] Título: {evento}")
+        # Buscar todos los bloques de días
+        titulas = soup.select("div.tit_wrap")
 
-                # Fecha
-                fecha_meta = concierto.select_one("meta[itemprop='startDate']")
-                fecha_raw = fecha_meta["content"] if fecha_meta else None
-                fecha_evento = dateparser.parse(fecha_raw, languages=["es"]) if fecha_raw else None
-
-                if not fecha_evento:
-                    print(f"❌ [{idx}] Fecha no reconocida, descartado.")
-                    continue
-
-                # Hora
-                hora = ""
-                time_div = concierto.select_one("div.time")
-                if time_div:
-                    time_parts = list(time_div.stripped_strings)
-                    if len(time_parts) > 1:
-                        hora = time_parts[1].strip()
-
-                # Lugar
-                lugar_el = concierto.select_one("a.local")
-                lugar_raw = lugar_el.get_text(strip=True) if lugar_el else "Asturias"
-                lugar = lugar_raw.split(".")[0] if "." in lugar_raw else lugar_raw
-
-                lugar_hyperlink = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")'
-
-                # Disciplina → fijo a Música en este portal
-                disciplina = "Música"
-
-                eventos.append({
-                    "fuente": "Conciertos.club",
-                    "evento": evento,
-                    "fecha": fecha_evento,
-                    "hora": hora,
-                    "lugar": lugar_hyperlink,
-                    "link": link,
-                    "disciplina": disciplina
-                })
-
-                print("✅ Añadido.")
-
-            except Exception as e:
-                print(f"⚠️ [{idx}] Error procesando concierto: {e}")
+        for titula in titulas:
+            # Extraer fecha textual
+            fecha_texto = titula.select_one("div.tit")
+            if not fecha_texto:
                 continue
+
+            fecha_str = fecha_texto.text.strip()
+
+            # Eliminar textos como "Hoy", "Mañana"
+            for palabra in ["Hoy", "Mañana"]:
+                if palabra in fecha_str:
+                    fecha_str = fecha_str.replace(palabra, "").strip()
+
+            # parsear fecha
+            fecha_evento = dateparser.parse(fecha_str, languages=["es"])
+            if not fecha_evento:
+                print(f"⚠️ No se pudo parsear fecha: {fecha_str}")
+                continue
+
+            # encontrar la <ul class="list"> que le sigue
+            ul = titula.find_next_sibling("ul", class_="list")
+            if not ul:
+                continue
+
+            eventos_li = ul.select("li[itemtype='http://schema.org/ListItem']")
+
+            for idx, li in enumerate(eventos_li):
+                try:
+                    music_event = li.select_one("div[itemtype='http://schema.org/MusicEvent']")
+                    if not music_event:
+                        continue
+
+                    # link y título
+                    enlace_el = music_event.select_one("a.nombre")
+                    link = urljoin(base_url, enlace_el["href"]) if enlace_el else base_url
+                    evento = enlace_el.get_text(strip=True) if enlace_el else "Sin título"
+                    print(f"🔹 [{idx}] Título: {evento}")
+
+                    # hora
+                    hora = ""
+                    time_div = music_event.select_one("div.time")
+                    if time_div:
+                        hora = time_div.get_text(strip=True)
+
+                    # lugar
+                    lugar_el = music_event.select_one("a.local")
+                    lugar_text = lugar_el.get_text(strip=True) if lugar_el else "Asturias"
+                    lugar_nombre = lugar_text.split(".")[0].strip() if "." in lugar_text else lugar_text
+
+                    lugar_hyperlink = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar_nombre)}", "{lugar_nombre}")'
+
+                    # disciplina: fija a Música
+                    disciplina = "Música"
+
+                    eventos.append({
+                        "fuente": "Conciertos.club",
+                        "evento": evento,
+                        "fecha": fecha_evento,
+                        "hora": hora,
+                        "lugar": lugar_hyperlink,
+                        "link": link,
+                        "disciplina": disciplina
+                    })
+
+                    print("✅ Añadido.")
+
+                except Exception as e:
+                    print(f"⚠️ [{idx}] Error procesando concierto: {e}")
+                    continue
 
     except Exception as e:
         print(f"❌ Error global accediendo a conciertos.club: {e}")
 
     print(f"🎉 Total conciertos importados: {len(eventos)}")
     return eventos
+
 
 
 
