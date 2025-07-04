@@ -185,18 +185,12 @@ def get_events_gijon(max_pages=100):
     return events
 
 
+# --------------------------
+# Scraping Mieres desde página nueva de calendario
+# --------------------------
 
-# --------------------------
-# Scraping Mieres (sin filtro de fechas)
-# --------------------------
 def get_events_mieres():
-    from bs4 import BeautifulSoup
-    import time
-    from urllib.parse import quote_plus
-    import dateparser
-    from datetime import datetime
-
-    url = "https://www.mieres.es/cultura/"
+    url = "https://www.mieres.es/eventos/"
     events = []
     driver = get_selenium_driver(headless=True)
 
@@ -204,54 +198,69 @@ def get_events_mieres():
         driver.get(url)
         time.sleep(5)
         soup = BeautifulSoup(driver.page_source, "html.parser")
-        items = soup.select("div.tribe-mini-calendar-event")
 
+        items = soup.select("div[id^='tribe-events-event']")
         print(f"📦 Encontrados {len(items)} eventos en Mieres")
 
         for idx, item in enumerate(items):
-            # Título y enlace
-            title_el = item.select_one("h2.tribe-events-title a")
-            title = title_el.text.strip() if title_el else "Sin título"
-            link = title_el["href"] if title_el and title_el.has_attr("href") else url
-            print(f"🔹 [{idx}] Título: {title}")
-
-            # Fecha y hora
-            date_el = item.select_one("span.tribe-event-date-start")
-            raw_fecha = date_el.text.strip() if date_el else ""
-            if "-" in raw_fecha:
-                partes = raw_fecha.split("-")
-                fecha_txt = partes[0].strip()
-                hora_txt = partes[1].strip() if len(partes) > 1 else ""
-            else:
-                fecha_txt = raw_fecha
-                hora_txt = ""
-
-            parsed_date = dateparser.parse(f"{fecha_txt} {datetime.now().year}", languages=["es"])
-            if not parsed_date:
-                print("❌ Fecha no reconocida, descartado.")
+            data_json_str = item.get("data-tribejson", None)
+            if not data_json_str:
+                print(f"⚠️ [{idx}] Evento sin data-tribejson, saltado.")
                 continue
 
-            # Lugar
-            lugar_el = item.select_one("span.lugar_evento a")
-            lugar = lugar_el.text.strip() if lugar_el else "Mieres"
+            try:
+                data_json = json.loads(data_json_str)
 
-            # Disciplina (usa tu función de inferencia si la tienes)
-            disciplina = inferir_disciplina(title)
+                # Título
+                title = data_json.get("title", "Sin título")
+                link = data_json.get("permalink", url)
+                print(f"🔹 [{idx}] Título: {title}")
 
-            events.append({
-                "fuente": "Mieres",
-                "evento": title,
-                "fecha": parsed_date,
-                "hora": hora_txt,
-                "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
-                "link": link,
-                "disciplina": disciplina
-            })
+                # Fecha
+                start_time_str = data_json.get("startTime", "")
+                fecha_evento = None
+                if start_time_str:
+                    fecha_evento = dateparser.parse(
+                        start_time_str + f" {datetime.now().year}",
+                        languages=["es"]
+                    )
 
-            print("✅ Añadido.")
+                if not fecha_evento:
+                    print(f"❌ [{idx}] Fecha no reconocida, descartado.")
+                    continue
+
+                # Hora
+                hora_text = ""
+                if "-" in start_time_str:
+                    partes = start_time_str.split("-")
+                    hora_text = partes[1].strip() if len(partes) > 1 else partes[0].strip()
+                else:
+                    hora_text = start_time_str.strip()
+
+                # Lugar (fijo a Mieres si no hay otro)
+                lugar = "Mieres"
+
+                disciplina = inferir_disciplina(title)
+
+                events.append({
+                    "fuente": "Mieres",
+                    "evento": title,
+                    "fecha": fecha_evento,
+                    "hora": hora_text,
+                    "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
+                    "link": link,
+                    "disciplina": disciplina
+                })
+
+                print("✅ Añadido.")
+
+            except Exception as e:
+                print(f"❌ [{idx}] Error procesando evento: {e}")
+                continue
 
     except Exception as e:
-        print(f"❌ Error en Mieres: {e}")
+        print(f"❌ Error global en Mieres: {e}")
+
     finally:
         driver.quit()
 
@@ -259,7 +268,9 @@ def get_events_mieres():
     return events
 
 
-
+# --------------------------
+# Scraping Asturias Cultura
+# --------------------------
 
 def get_events_asturiescultura(fechas_objetivo):
     from urllib.parse import urljoin
