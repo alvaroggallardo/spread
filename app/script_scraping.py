@@ -814,14 +814,13 @@ def get_events_asturtur(fechas_objetivo):
 def inferir_disciplina(titulo):
     titulo = titulo.lower()
 
-    # Disciplinas clásicas
     if any(p in titulo for p in ["cine", "film", "película", "documental", "corto", "largometraje"]):
         return "Cine"
     elif any(p in titulo for p in ["teatro", "representación", "obra", "actor", "actriz", "escénica", "escénico"]):
         return "Artes Escénicas"
     elif any(p in titulo for p in ["jazz", "música", "concierto", "recital", "banda", "coro", "cantante", "orquesta", "piano", "metal", "rock", "hip hop", "rap", "trap", "funk", "reguetón", "reggaeton"]):
         return "Música"
-    elif any(p in titulo for p in ["exposición", "fotografía", "escultura", "pintura", "arte", "visual", "galería", "retratos", "acuarela", "óleo"]):
+    elif any(p in titulo for p in ["exposición", "fotografía", "fotográfica", "escultura", "pintura", "arte", "visual", "galería", "retratos", "acuarela", "óleo", "speculum"]):  # ✅ añadido fotografía, fotográfica, speculum
         return "Artes Visuales"
     elif any(p in titulo for p in ["cuentos", "narración", "cuentacuentos", "oral"]):
         return "Narración Oral"
@@ -835,10 +834,15 @@ def inferir_disciplina(titulo):
         return "Formación / Taller"
     elif any(p in titulo for p in ["tradicional", "astur", "costumbre"]):
         return "Cultura Tradicional"
-    elif any(p in titulo for p in ["visita guiada", "visitas guiadas", "ruta", "patrimonio", "historia", "arqueología", "recorrido", "descubre"]):
+    elif any(p in titulo for p in ["visita guiada", "visitas guiadas", "ruta", "rutas", "patrimonio", "historia", 
+                                   "arqueología", "recorrido", "descubre", "bus turístico", "georuta", 
+                                   "ruta turística", "rutas turísticas"]):  # ✅ añadido términos más concretos
         return "Itinerarios Patrimoniales"
-    elif any(p in titulo for p in ["infantil", "niños", "niñas", "peques", "familia", "familiares"]):
+    elif any(p in titulo for p in ["infantil", "niños", "niñas", "peques", "familia", "familiares", 
+                                   "campamento", "campamentos", "vacaciones activas", "campamentos urbanos"]):  # ✅ añadido campamento
         return "Público Infantil / Familiar"
+    elif any(p in titulo for p in ["deporte", "actividad física", "cicloturista", "carrera", "juegas"]):  # ✅ añadido deportes y juegas
+        return "Deportes / Actividad Física"
     elif any(p in titulo for p in ["medioambiente", "sostenibilidad", "reciclaje", "clima", "ecología", "verde"]):
         return "Medio Ambiente"
     elif any(p in titulo for p in ["salud", "bienestar", "cuidados", "prevención", "psicología", "enfermedad"]):
