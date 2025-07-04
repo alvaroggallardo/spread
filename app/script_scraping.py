@@ -18,6 +18,7 @@ from datetime import datetime
 import re
 from urllib.parse import urljoin, quote_plus
 from datetime import datetime, timedelta
+from ics import Calendar
 
 # --------------------------
 # Geocoding
@@ -191,90 +192,44 @@ def get_events_gijon(max_pages=100):
 # --------------------------
 
 def get_events_mieres():
-    url_ajax = "https://www.mieres.es/wp-admin/admin-ajax.php"
-    
-    payload = {
-        "action": "tribe_event_query",
-        "tribe_event_display": "list",
-        "tribe-bar-date": datetime.now().strftime("%Y-%m-%d")
-    }
-
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-    }
-
-    response = requests.post(url_ajax, data=payload, headers=headers)
-
-    if response.status_code != 200:
-        print("❌ Error en petición AJAX:", response.status_code)
-        return []
-
-    data = response.json()
-
-    html_events = data.get("html", "")
-
-    soup = BeautifulSoup(html_events, "html.parser")
-
-    items = soup.select("div[id^='tribe-events-event']")
-    print(f"📦 Encontrados {len(items)} eventos en HTML AJAX")
-
+    url = "https://www.mieres.es/eventos/?ical=1"
     events = []
 
-    for idx, item in enumerate(items):
-        data_json_str = item.get("data-tribejson", None)
-        if not data_json_str:
-            print(f"⚠️ [{idx}] Evento sin data-tribejson, saltado.")
-            continue
+    response = requests.get(url)
+    cal = Calendar(response.text)
 
-        try:
-            data_json = json.loads(data_json_str)
+    for idx, event in enumerate(cal.events):
+        title = event.name or "Sin título"
+        link = event.url if event.url else "https://www.mieres.es/eventos/"
+        lugar = event.location or "Mieres"
 
-            title = data_json.get("title", "Sin título")
-            link = data_json.get("permalink", "")
-            print(f"🔹 [{idx}] Título: {title}")
-
-            start_time_str = data_json.get("startTime", "")
+        # La librería ics devuelve start/end como datetime aware (con zona horaria)
+        start_dt = event.begin
+        if start_dt is not None:
+            fecha_evento = start_dt.datetime
+            hora_text = fecha_evento.strftime("%H:%M")
+        else:
             fecha_evento = None
-            if start_time_str:
-                fecha_evento = dateparser.parse(
-                    start_time_str + f" {datetime.now().year}",
-                    languages=["es"]
-                )
-
-            if not fecha_evento:
-                print(f"❌ [{idx}] Fecha no reconocida, descartado.")
-                continue
-
             hora_text = ""
-            if "-" in start_time_str:
-                partes = start_time_str.split("-")
-                hora_text = partes[1].strip() if len(partes) > 1 else partes[0].strip()
-            else:
-                hora_text = start_time_str.strip()
 
-            lugar = "Mieres"
+        disciplina = inferir_disciplina(title)
 
-            disciplina = inferir_disciplina(title)
+        events.append({
+            "fuente": "Mieres",
+            "evento": title,
+            "fecha": fecha_evento,
+            "hora": hora_text,
+            "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
+            "link": link,
+            "disciplina": disciplina
+        })
 
-            event_data = {
-                "fuente": "Mieres",
-                "evento": title,
-                "fecha": fecha_evento,
-                "hora": hora_text,
-                "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
-                "link": link,
-                "disciplina": disciplina
-            }
+        print(f"✅ [{idx}] {title} -> {fecha_evento} {hora_text}")
 
-            events.append(event_data)
-            print("✅ Añadido.")
+    print(f"🎉 Total eventos Mieres (ICS): {len(events)}")
 
-        except Exception as e:
-            print(f"❌ [{idx}] Error procesando evento: {e}")
-            continue
-
-    print(f"🎉 Total eventos Mieres: {len(events)}")
-    return events
+    df = pd.DataFrame(events)
+    return df
 
 # --------------------------
 # Scraping Asturias Cultura
