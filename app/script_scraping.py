@@ -606,7 +606,7 @@ def get_events_conciertosclub():
                         "hora": hora,
                         "lugar": lugar_hyperlink,
                         "link": link,
-                        "disciplina": disciplina or "Música"
+                        "disciplina": "Música"
                     })
 
                     print(f"✅ [{article_idx}-{idx}] {evento} -> {fecha_evento.strftime('%Y-%m-%d')} {hora}")
