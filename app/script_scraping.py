@@ -359,7 +359,7 @@ def get_events_aviles():
                 onclick_attr = btn["onclick"]
                 relative_url = onclick_attr.split("showPopup('")[1].split("'")[0]
                 clean_url = relative_url.split("?")[0]
-                link = "https://aviles.es" + clean_url
+                link = "https://aviles.es/proximos-eventos"
 
             print(f"🔹 [{idx}] Título: {title}")
 
