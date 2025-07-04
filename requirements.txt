@@ -9,3 +9,4 @@ dateparser
 geopy
 webdriver-manager
 psycopg2-binary
+ics
