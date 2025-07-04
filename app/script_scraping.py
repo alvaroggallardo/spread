@@ -358,7 +358,8 @@ def get_events_aviles():
             if btn and btn.has_attr("onclick"):
                 onclick_attr = btn["onclick"]
                 relative_url = onclick_attr.split("showPopup('")[1].split("'")[0]
-                link = "https://aviles.es" + relative_url
+                clean_url = relative_url.split("?")[0]
+                link = "https://aviles.es" + clean_url
 
             print(f"🔹 [{idx}] Título: {title}")
 
