@@ -514,63 +514,85 @@ def get_events_siero():
 
 
 
-def get_events_conciertosclub(fechas_objetivo):
-    from urllib.parse import urljoin
+# --------------------------
+# Scraping Conciertos.club
+# --------------------------
+
+def get_events_conciertosclub():
+    from urllib.parse import urljoin, quote_plus
+    import requests
+    from bs4 import BeautifulSoup
+    import dateparser
 
     base_url = "https://conciertos.club"
     url = f"{base_url}/search.php?artist_id=&local_id=&provin_id=13&estilo_id=&fecha1=&fecha2="
     eventos = []
 
+    print(f"🌐 Cargando conciertos desde: {url}")
+
     try:
-        res = requests.get(url)
+        res = requests.get(url, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
         conciertos = soup.select("li[itemtype='http://schema.org/MusicEvent']")
-        print(f"🔍 Se encontraron {len(conciertos)} conciertos en conciertos.club")
+        print(f"📦 Se encontraron {len(conciertos)} conciertos en conciertos.club")
 
-        for concierto in conciertos:
+        for idx, concierto in enumerate(conciertos):
             try:
                 # Título y enlace
                 enlace_el = concierto.select_one("a.nombre")
                 link = urljoin(base_url, enlace_el["href"]) if enlace_el else base_url
                 evento = enlace_el.get_text(strip=True) if enlace_el else "Sin título"
+                print(f"🔹 [{idx}] Título: {evento}")
 
                 # Fecha
                 fecha_meta = concierto.select_one("meta[itemprop='startDate']")
                 fecha_raw = fecha_meta["content"] if fecha_meta else None
-                fecha = dateparser.parse(fecha_raw) if fecha_raw else None
+                fecha_evento = dateparser.parse(fecha_raw, languages=["es"]) if fecha_raw else None
 
-                if not fecha or fecha.date() not in fechas_objetivo:
+                if not fecha_evento:
+                    print(f"❌ [{idx}] Fecha no reconocida, descartado.")
                     continue
 
-                # Hora extraída correctamente
-                time_div = concierto.select_one("div.time")
+                # Hora
                 hora = ""
+                time_div = concierto.select_one("div.time")
                 if time_div:
                     time_parts = list(time_div.stripped_strings)
                     if len(time_parts) > 1:
                         hora = time_parts[1].strip()
 
-                # Lugar limpio
+                # Lugar
                 lugar_el = concierto.select_one("a.local")
                 lugar_raw = lugar_el.get_text(strip=True) if lugar_el else "Asturias"
                 lugar = lugar_raw.split(".")[0] if "." in lugar_raw else lugar_raw
 
+                lugar_hyperlink = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")'
+
+                # Disciplina → fijo a Música en este portal
+                disciplina = "Música"
+
                 eventos.append({
                     "fuente": "Conciertos.club",
                     "evento": evento,
-                    "fecha": fecha,
+                    "fecha": fecha_evento,
                     "hora": hora,
-                    "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
+                    "lugar": lugar_hyperlink,
                     "link": link,
-                    "disciplina": "Música"
+                    "disciplina": disciplina
                 })
 
-            except Exception as e:
-                print(f"⚠️ Error procesando un concierto: {e}")
-    except Exception as e:
-        print(f"❌ Error accediendo a conciertos.club: {e}")
+                print("✅ Añadido.")
 
+            except Exception as e:
+                print(f"⚠️ [{idx}] Error procesando concierto: {e}")
+                continue
+
+    except Exception as e:
+        print(f"❌ Error global accediendo a conciertos.club: {e}")
+
+    print(f"🎉 Total conciertos importados: {len(eventos)}")
     return eventos
+
 
 
 def obtener_eventos_por_tematica(tematicas, fechas_objetivo):
