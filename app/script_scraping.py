@@ -534,27 +534,35 @@ def get_events_conciertosclub():
         res = requests.get(url, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # Recorremos todos los articles (cada uno es un día)
-        articles = soup.select("section.conciertos article")
+        articles = soup.select("section.conciertos > article")
 
-        for article in articles:
-            # Leer la fecha del día
+        for article_idx, article in enumerate(articles):
+            # Pillar la fecha del día
             tit_wrap = article.select_one("div.tit_wrap > div.tit")
             if not tit_wrap:
                 continue
 
             fecha_texto = tit_wrap.get_text(strip=True)
+
             # Quitar Hoy, Mañana, etc.
             for palabra in ["Hoy", "Mañana"]:
                 if palabra in fecha_texto:
                     fecha_texto = fecha_texto.replace(palabra, "").strip()
+
+            # Si la fecha sigue viniendo con el día de la semana, lo quitamos:
+            # Ej: "Domingo 6 de Julio"
+            palabras = fecha_texto.split()
+            if len(palabras) >= 2 and palabras[0].capitalize() in [
+                "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"
+            ]:
+                fecha_texto = " ".join(palabras[1:])
 
             fecha_evento = dateparser.parse(fecha_texto, languages=["es"])
             if not fecha_evento:
                 print(f"⚠️ No se pudo parsear fecha: {fecha_texto}")
                 continue
 
-            # Procesar los eventos de ese día
+            # Pillar todos los conciertos de ese día
             lis = article.select("ul.list > li")
 
             for idx, li in enumerate(lis):
@@ -599,10 +607,10 @@ def get_events_conciertosclub():
                         "disciplina": disciplina or "Música"
                     })
 
-                    print(f"✅ [{idx}] {evento} -> {fecha_evento} {hora}")
+                    print(f"✅ [{article_idx}-{idx}] {evento} -> {fecha_evento.strftime('%Y-%m-%d')} {hora}")
 
                 except Exception as e:
-                    print(f"⚠️ [{idx}] Error procesando concierto: {e}")
+                    print(f"⚠️ [{article_idx}-{idx}] Error procesando concierto: {e}")
                     continue
 
     except Exception as e:
@@ -610,6 +618,7 @@ def get_events_conciertosclub():
 
     print(f"🎉 Total conciertos importados: {len(eventos)}")
     return eventos
+
 
 
 
