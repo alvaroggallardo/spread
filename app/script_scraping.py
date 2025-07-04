@@ -1,6 +1,7 @@
 import pandas as pd
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
+import json
 from geopy.geocoders import Nominatim
 import dateparser
 from selenium import webdriver
@@ -223,13 +224,16 @@ def get_events_mieres():
             try:
                 data_json = json.loads(data_json_str)
 
+                # Título
                 title = data_json.get("title", "Sin título")
                 link = data_json.get("permalink", url)
                 print(f"🔹 [{idx}] Título: {title}")
 
+                # Fecha
                 start_time_str = data_json.get("startTime", "")
                 fecha_evento = None
                 if start_time_str:
+                    # El startTime suele venir así → "01 julio-09:00" o "01 julio-09:00-14:00"
                     fecha_evento = dateparser.parse(
                         start_time_str + f" {datetime.now().year}",
                         languages=["es"]
@@ -239,6 +243,7 @@ def get_events_mieres():
                     print(f"❌ [{idx}] Fecha no reconocida, descartado.")
                     continue
 
+                # Hora
                 hora_text = ""
                 if "-" in start_time_str:
                     partes = start_time_str.split("-")
@@ -246,11 +251,14 @@ def get_events_mieres():
                 else:
                     hora_text = start_time_str.strip()
 
+                # Lugar
                 lugar = "Mieres"
 
+                # Disciplina
                 disciplina = inferir_disciplina(title)
 
-                events.append({
+                # Generar el registro
+                event_data = {
                     "fuente": "Mieres",
                     "evento": title,
                     "fecha": fecha_evento,
@@ -258,8 +266,9 @@ def get_events_mieres():
                     "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
                     "link": link,
                     "disciplina": disciplina
-                })
+                }
 
+                events.append(event_data)
                 print("✅ Añadido.")
 
             except Exception as e:
