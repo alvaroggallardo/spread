@@ -413,68 +413,105 @@ def get_events_aviles():
 
 
 
-def get_events_siero(fechas_objetivo):
+# --------------------------
+# Scraping Siero
+# --------------------------
+
+def get_events_siero():
+    from urllib.parse import quote_plus
+    import time
+    from bs4 import BeautifulSoup
+    import requests
+    import dateparser
+
     url = "https://www.ayto-siero.es/agenda/"
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, "html.parser")
-    eventos = []
+    events = []
 
-    event_wrappers = soup.select("div.ectbe-inner-wrapper")
+    print(f"🌐 Cargando página principal de Siero: {url}")
 
-    for e in event_wrappers:
-        try:
-            # Título y enlace
-            title_el = e.select_one("div.ectbe-evt-title a.ectbe-evt-url")
-            title = title_el.text.strip() if title_el else "Sin título"
-            link = title_el["href"] if title_el and title_el.has_attr("href") else url
+    try:
+        response = requests.get(url, timeout=10)
+        soup = BeautifulSoup(response.text, "html.parser")
+        items = soup.select("div.ectbe-inner-wrapper")
 
-            # Fecha
-            day_el = e.select_one("span.ectbe-ev-day")
-            month_el = e.select_one("span.ectbe-ev-mo")
-            year_el = e.select_one("span.ectbe-ev-yr")
-            if not (day_el and month_el and year_el):
-                continue
-            fecha_str = f"{day_el.text.strip()} {month_el.text.strip()} {year_el.text.strip()}"
-            fecha = dateparser.parse(fecha_str, languages=["es"])
+        print(f"📦 Encontrados {len(items)} eventos en Siero")
 
-            if not fecha or fecha.date() not in fechas_objetivo:
-                continue
+        if not items:
+            print("🚫 No hay eventos en la página de Siero.")
+            return events
 
-            # Lugar
-            lugar_el = e.select_one("span.ectbe-address")
-            if lugar_el:
-                lugar = lugar_el.get_text(separator=" ", strip=True)
-                lugar = lugar.split(",")[0].strip()  # Tomar sólo el nombre del sitio antes de la coma
-            else:
-                lugar = "Siero"
-            lugar_hyperlink = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")'
-
-            # Hora - desde la página del evento
-            hora = ""
+        for idx, item in enumerate(items):
             try:
-                detalle = requests.get(link)
-                if detalle.status_code == 200:
-                    soup_detalle = BeautifulSoup(detalle.text, "html.parser")
-                    hora_span = soup_detalle.select_one("div.tecset-date span.tribe-event-date-start")
-                    if hora_span and "|" in hora_span.text:
-                        hora = hora_span.text.split("|")[1].strip()
-            except Exception as ex:
-                print(f"⚠️ No se pudo extraer la hora desde {link}: {ex}")
+                # Título y link
+                title_el = item.select_one("div.ectbe-evt-title a.ectbe-evt-url")
+                title = title_el.text.strip() if title_el else "Sin título"
+                link = title_el["href"] if title_el and title_el.has_attr("href") else url
 
-            eventos.append({
-                "fuente": "Siero",
-                "evento": title,
-                "fecha": fecha,
-                "hora": hora,
-                "lugar": lugar_hyperlink,
-                "link": link
-            })
+                print(f"🔹 [{idx}] Título: {title}")
 
-        except Exception as e:
-            print(f"⚠️ Error procesando un evento de Siero: {e}")
-            continue
+                # Fecha
+                day_el = item.select_one("span.ectbe-ev-day")
+                month_el = item.select_one("span.ectbe-ev-mo")
+                year_el = item.select_one("span.ectbe-ev-yr")
 
-    return eventos
+                if not (day_el and month_el and year_el):
+                    print(f"❌ [{idx}] No se pudo extraer fecha, descartado.")
+                    continue
+
+                fecha_str = f"{day_el.text.strip()} {month_el.text.strip()} {year_el.text.strip()}"
+                fecha_evento = dateparser.parse(fecha_str, languages=["es"])
+
+                if not fecha_evento:
+                    print(f"❌ [{idx}] Fecha no reconocida, descartado.")
+                    continue
+
+                # Lugar
+                lugar_el = item.select_one("span.ectbe-address")
+                if lugar_el:
+                    lugar = lugar_el.get_text(separator=" ", strip=True)
+                    lugar = lugar.split(",")[0].strip()
+                else:
+                    lugar = "Siero"
+
+                lugar_hyperlink = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")'
+
+                # Hora → intentar desde página detalle
+                hora_text = ""
+                try:
+                    detalle = requests.get(link, timeout=10)
+                    if detalle.status_code == 200:
+                        soup_detalle = BeautifulSoup(detalle.text, "html.parser")
+                        hora_span = soup_detalle.select_one("div.tecset-date span.tribe-event-date-start")
+                        if hora_span and "|" in hora_span.text:
+                            hora_text = hora_span.text.split("|")[1].strip()
+                except Exception as ex:
+                    print(f"⚠️ [{idx}] No se pudo extraer la hora desde {link}: {ex}")
+
+                # Disciplina
+                disciplina = inferir_disciplina(title)
+
+                events.append({
+                    "fuente": "Siero",
+                    "evento": title,
+                    "fecha": fecha_evento,
+                    "hora": hora_text,
+                    "lugar": lugar_hyperlink,
+                    "link": link,
+                    "disciplina": disciplina
+                })
+
+                print("✅ Añadido.")
+
+            except Exception as e:
+                print(f"❌ [{idx}] Error procesando evento: {e}")
+                continue
+
+    except Exception as e:
+        print(f"❌ Error global en Siero: {e}")
+
+    print(f"🎉 Total eventos Siero: {len(events)}")
+    return events
+
 
 
 def get_events_conciertosclub(fechas_objetivo):
