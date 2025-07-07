@@ -631,93 +631,102 @@ def get_events_conciertosclub():
 # Scraping Turismo Asturias
 # --------------------------
 
-# --------------------------
-# Scraping Turismo Asturias
-# --------------------------
-
 def get_events_turismoasturias(max_pages=10, tematicas=None):
-    
     base_url = "https://www.turismoasturias.es/agenda-de-asturias"
-    eventos = []
+    events = []
 
-    for tematica in tematicas:
+    for tematica in tematicas or []:
         print(f"🔎 Procesando temática: {tematica}")
         for page in range(1, max_pages + 1):
             url = f"{base_url}/{tematica}?page={page}"
             print(f"🌐 Cargando página {page}: {url}")
+            
             try:
-                response = requests.get(url, timeout=10)
-                soup = BeautifulSoup(response.content, 'html.parser')
-                tarjetas_evento = soup.select('div.card[itemtype="http://schema.org/Event"]')
-                print(f"📦 Página {page}: {len(tarjetas_evento)} eventos encontrados")
+                res = requests.get(url, timeout=10)
+                soup = BeautifulSoup(res.content, "html.parser")
+                items = soup.select("div.card[itemtype='http://schema.org/Event']")
+                print(f"📦 Página {page}: {len(items)} eventos encontrados")
 
-                if not tarjetas_evento:
+                if not items:
                     print(f"🚫 Fin de paginación en página {page}")
                     break
 
-                for idx, tarjeta in enumerate(tarjetas_evento):
+                for idx, item in enumerate(items):
                     try:
-                        nombre = tarjeta.select_one('.card-title').get_text(strip=True)
-                        enlace = tarjeta.select_one('a[itemprop="url"]')['href']
-                        lugar = tarjeta.select_one('[itemprop="location"] [itemprop="name"]').get_text(strip=True)
+                        # Título
+                        title_el = item.select_one(".card-title")
+                        title = title_el.text.strip() if title_el else "Sin título"
 
-                        fecha_inicio_raw = tarjeta.select_one('[itemprop="startDate"]')['date']
-                        fecha_fin_el = tarjeta.select_one('[itemprop="endDate"]')
-                        fecha_fin_raw = fecha_fin_el['date'] if fecha_fin_el else fecha_inicio_raw
+                        # Link
+                        link_el = item.select_one("a[itemprop='url']")
+                        link = link_el["href"] if link_el else ""
+                        if link and not link.startswith("http"):
+                            link = f"https://www.turismoasturias.es{link}"
 
-                        fecha_inicio = dateparser.parse(fecha_inicio_raw, languages=["es"])
-                        fecha_fin = dateparser.parse(fecha_fin_raw, languages=["es"])
+                        # Lugar
+                        lugar_el = item.select_one("[itemprop='location'] [itemprop='name']")
+                        lugar = lugar_el.text.strip() if lugar_el else "Asturias"
 
-                        # Convertir a string ISO
-                        fecha_str = fecha_inicio.isoformat() if fecha_inicio else None
-                        fecha_fin_str = fecha_fin.isoformat() if fecha_fin else None
+                        # Fechas
+                        fecha_inicio_raw = item.select_one("[itemprop='startDate']")
+                        fecha_fin_el = item.select_one("[itemprop='endDate']")
 
-                        # Garantizar que no son listas
-                        if isinstance(fecha_str, list):
-                            fecha_str = fecha_str[0]
-                        if isinstance(fecha_fin_str, list):
-                            fecha_fin_str = fecha_fin_str[0]
+                        fecha_inicio = None
+                        fecha_fin = None
+
+                        if fecha_inicio_raw:
+                            fecha_inicio = dateparser.parse(
+                                fecha_inicio_raw["date"], languages=["es"]
+                            )
+
+                        if fecha_fin_el:
+                            fecha_fin = dateparser.parse(
+                                fecha_fin_el["date"], languages=["es"]
+                            )
+                        else:
+                            fecha_fin = fecha_inicio
+
+                        if not fecha_inicio:
+                            print(f"❌ Fecha no reconocida, descartado: {title}")
+                            continue
 
                         # Hora
-                        hora = ""
-                        hora_el = tarjeta.select_one('.hour')
+                        hora_text = ""
+                        hora_el = item.select_one(".hour")
                         if hora_el:
-                            hora_text = hora_el.get_text(" ", strip=True)
-                            for parte in hora_text.split():
+                            hora_str = hora_el.get_text(" ", strip=True)
+                            for parte in hora_str.split():
                                 if ":" in parte:
-                                    hora = parte.strip()
+                                    hora_text = parte
                                     break
 
-                        # Disciplina → usar tematica como fallback
+                        # Disciplina
                         disciplina = tematica.replace("-", " ").title()
-
-                        # También intentar inferir disciplina desde el nombre
-                        disciplina_inferida = inferir_disciplina(nombre)
+                        disciplina_inferida = inferir_disciplina(title)
                         if disciplina_inferida and disciplina_inferida != "Otros":
                             disciplina = disciplina_inferida
 
-                        eventos.append({
+                        events.append({
                             "fuente": "Turismo Asturias",
-                            "evento": nombre,
-                            "link": enlace,
+                            "evento": title,
+                            "fecha": fecha_inicio,
+                            "fecha_fin": fecha_fin,
+                            "hora": hora_text,
                             "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
-                            "fecha": fecha_str,
-                            "fecha_fin": fecha_fin_str,
-                            "hora": hora,
+                            "link": link,
                             "disciplina": disciplina
                         })
-
-                        print(f"✅ [{idx}] {nombre} -> {fecha_str} {hora}")
+                        print(f"✅ [{idx}] {title} -> {fecha_inicio.strftime('%Y-%m-%d')} {hora_text}")
 
                     except Exception as e:
-                        print(f"⚠️ Error procesando evento en '{tematica}': {e}")
+                        print(f"⚠️ [Turismo Asturias][{tematica}][{idx}] Error procesando evento: {e}")
                         continue
 
             except Exception as e:
-                print(f"❌ Error accediendo a {url}: {e}")
+                print(f"❌ [Turismo Asturias][{tematica}] Error en página {page}: {e}")
                 continue
 
-    print(f"🎉 Total eventos Turismo Asturias: {len(eventos)}")
+    print(f"🎉 Total eventos Turismo Asturias: {len(events)}")
     return events
 
 
