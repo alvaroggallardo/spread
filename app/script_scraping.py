@@ -627,8 +627,11 @@ def get_events_conciertosclub():
 
 
 
-def get_events_turismoasturias(max_pages=10, tematicas=None):
+# --------------------------
+# Scraping Turismo Asturias
+# --------------------------
 
+def get_events_turismoasturias(max_pages=10, tematicas=None):
     base_url = "https://www.turismoasturias.es/agenda-de-asturias"
     events = []
 
@@ -665,31 +668,30 @@ def get_events_turismoasturias(max_pages=10, tematicas=None):
                         lugar = lugar_el.text.strip() if lugar_el else "Asturias"
 
                         # Fechas
-                        fecha_inicio = None
+                        # ⬇️ Esto lo hacemos exactamente como Gijón: texto → parse
+                        date_text = ""
                         fecha_inicio_raw = item.select_one("[itemprop='startDate']")
                         if fecha_inicio_raw:
-                            raw = fecha_inicio_raw.get("date")
-                            if raw:
-                                fecha_inicio = dateparser.parse(raw, languages=["es"])
+                            if fecha_inicio_raw.has_attr("date"):
+                                date_text = fecha_inicio_raw["date"]
                             else:
-                                texto = fecha_inicio_raw.get_text(strip=True)
-                                fecha_inicio = dateparser.parse(texto, languages=["es"])
+                                date_text = fecha_inicio_raw.get_text(strip=True)
 
-                        fecha_fin = None
-                        fecha_fin_el = item.select_one("[itemprop='endDate']")
-                        if fecha_fin_el:
-                            raw = fecha_fin_el.get("date")
-                            if raw:
-                                fecha_fin = dateparser.parse(raw, languages=["es"])
-                            else:
-                                texto = fecha_fin_el.get_text(strip=True)
-                                fecha_fin = dateparser.parse(texto, languages=["es"])
-                        else:
-                            fecha_fin = fecha_inicio
-
-                        if not fecha_inicio:
+                        fecha_evento = dateparser.parse(date_text, languages=["es"]) if date_text else None
+                        if not fecha_evento:
                             print(f"❌ Fecha no reconocida, descartado: {title}")
                             continue
+
+                        # Fin de evento
+                        date_fin_text = ""
+                        fecha_fin_el = item.select_one("[itemprop='endDate']")
+                        if fecha_fin_el:
+                            if fecha_fin_el.has_attr("date"):
+                                date_fin_text = fecha_fin_el["date"]
+                            else:
+                                date_fin_text = fecha_fin_el.get_text(strip=True)
+
+                        fecha_fin = dateparser.parse(date_fin_text, languages=["es"]) if date_fin_text else fecha_evento
 
                         # Hora
                         hora_text = ""
@@ -710,14 +712,14 @@ def get_events_turismoasturias(max_pages=10, tematicas=None):
                         events.append({
                             "fuente": "Turismo Asturias",
                             "evento": title,
-                            "fecha": fecha_inicio.isoformat() if fecha_inicio else None,
-                            "fecha_fin": fecha_fin.isoformat() if fecha_fin else None,
+                            "fecha": fecha_evento,
+                            "fecha_fin": fecha_fin,
                             "hora": hora_text,
                             "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
                             "link": link,
                             "disciplina": disciplina
                         })
-                        print(f"✅ [{idx}] {title} -> {fecha_inicio.strftime('%Y-%m-%d')} {hora_text}")
+                        print(f"✅ [{idx}] {title} -> {fecha_evento.strftime('%Y-%m-%d')} {hora_text}")
 
                     except Exception as e:
                         print(f"⚠️ [Turismo Asturias][{tematica}][{idx}] Error procesando evento: {e}")
@@ -729,8 +731,6 @@ def get_events_turismoasturias(max_pages=10, tematicas=None):
 
     print(f"🎉 Total eventos Turismo Asturias: {len(events)}")
     return events
-
-
 
 
 
