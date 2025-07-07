@@ -28,24 +28,42 @@ def guardar_eventos(scrapers=None):
     db = SessionLocal()
 
     if scrapers is None:
-        from app.script_scraping import get_events_gijon, get_events_oviedo, get_events_mieres, get_events_asturiescultura, get_events_aviles, get_events_siero, get_events_conciertosclub, get_events_turismoasturias
-        
-        tematicas = ["gastronomia", "museos", "fiestas", "cine-y-espectaculos", "deporte", "ocio-infantil", "rutas-y-visitas-guiadas", "ferias-mercados"]
-        
+        from app.script_scraping import (
+            get_events_gijon,
+            get_events_oviedo,
+            get_events_mieres,
+            get_events_asturiescultura,
+            get_events_aviles,
+            get_events_siero,
+            get_events_conciertosclub,
+            get_events_turismoasturias,
+        )
+
+        tematicas = [
+            "gastronomia",
+            "museos",
+            "fiestas",
+            "cine-y-espectaculos",
+            "deporte",
+            "ocio-infantil",
+            "rutas-y-visitas-guiadas",
+            "ferias-mercados"
+        ]
+
         scrapers = [
-            #get_events_gijon, 
-            #get_events_oviedo, 
-            #get_events_mieres,
-            #get_events_asturiescultura,
-            #get_events_aviles,
-            #get_events_siero,
-            #get_events_conciertosclub,
-            get_events_turismoasturias(tematicas)
-            ]
+            # get_events_gijon,
+            # get_events_oviedo,
+            # get_events_mieres,
+            # get_events_asturiescultura,
+            # get_events_aviles,
+            # get_events_siero,
+            # get_events_conciertosclub,
+            lambda: get_events_turismoasturias(tematicas=tematicas),
+        ]
 
     nuevos = 0
     for scraper in scrapers:
-        eventos = scraper()
+        eventos = scraper()   # ✅ ahora es callable
         for ev in eventos:
             if not evento_ya_existe(db, ev):
                 nuevo = Evento(
@@ -64,3 +82,4 @@ def guardar_eventos(scrapers=None):
     db.commit()
     db.close()
     return nuevos
+
