@@ -635,58 +635,32 @@ def get_events_conciertosclub():
 # Scraping Turismo Asturias
 # --------------------------
 
-def get_events_turismoasturias(max_pages=30, tematicas=None):
-    import time
-    import dateparser
-    import requests
-    from urllib.parse import quote_plus
-    from bs4 import BeautifulSoup
-    from requests.adapters import HTTPAdapter, Retry
-    from app.script_scraping import inferir_disciplina
-
-    if tematicas is None:
-        tematicas = ["gastronomia", "museos", "fiestas", "mercados", "deportes", "exposiciones"]
-
+def get_events_turismoasturias(max_pages=10, tematicas=None):
+    
     base_url = "https://www.turismoasturias.es/agenda-de-asturias"
-    events = []
-    seen_links = set()
-
-    # Configurar reintentos HTTP
-    session = requests.Session()
-    retries = Retry(total=5, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
-    session.mount("https://", HTTPAdapter(max_retries=retries))
+    eventos = []
 
     for tematica in tematicas:
         print(f"🔎 Procesando temática: {tematica}")
-
         for page in range(1, max_pages + 1):
             url = f"{base_url}/{tematica}?page={page}"
             print(f"🌐 Cargando página {page}: {url}")
-
             try:
-                response = session.get(url, timeout=10)
+                response = requests.get(url, timeout=10)
                 soup = BeautifulSoup(response.content, 'html.parser')
                 tarjetas_evento = soup.select('div.card[itemtype="http://schema.org/Event"]')
-
                 print(f"📦 Página {page}: {len(tarjetas_evento)} eventos encontrados")
 
                 if not tarjetas_evento:
-                    print(f"🚫 No más eventos en página {page}. Parando temática {tematica}.")
+                    print(f"🚫 Fin de paginación en página {page}")
                     break
 
                 for idx, tarjeta in enumerate(tarjetas_evento):
                     try:
                         nombre = tarjeta.select_one('.card-title').get_text(strip=True)
                         enlace = tarjeta.select_one('a[itemprop="url"]')['href']
-                        lugar_el = tarjeta.select_one('[itemprop="location"] [itemprop="name"]')
-                        lugar = lugar_el.get_text(strip=True) if lugar_el else "Asturias"
+                        lugar = tarjeta.select_one('[itemprop="location"] [itemprop="name"]').get_text(strip=True)
 
-                        # Control duplicados
-                        if enlace in seen_links:
-                            continue
-                        seen_links.add(enlace)
-
-                        # Fechas
                         fecha_inicio_raw = tarjeta.select_one('[itemprop="startDate"]')['date']
                         fecha_fin_el = tarjeta.select_one('[itemprop="endDate"]')
                         fecha_fin_raw = fecha_fin_el['date'] if fecha_fin_el else fecha_inicio_raw
@@ -694,8 +668,15 @@ def get_events_turismoasturias(max_pages=30, tematicas=None):
                         fecha_inicio = dateparser.parse(fecha_inicio_raw, languages=["es"])
                         fecha_fin = dateparser.parse(fecha_fin_raw, languages=["es"])
 
+                        # Convertir a string ISO
                         fecha_str = fecha_inicio.isoformat() if fecha_inicio else None
                         fecha_fin_str = fecha_fin.isoformat() if fecha_fin else None
+
+                        # Garantizar que no son listas
+                        if isinstance(fecha_str, list):
+                            fecha_str = fecha_str[0]
+                        if isinstance(fecha_fin_str, list):
+                            fecha_fin_str = fecha_fin_str[0]
 
                         # Hora
                         hora = ""
@@ -707,33 +688,36 @@ def get_events_turismoasturias(max_pages=30, tematicas=None):
                                     hora = parte.strip()
                                     break
 
-                        lugar_hyperlink = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")'
+                        # Disciplina → usar tematica como fallback
+                        disciplina = tematica.replace("-", " ").title()
 
-                        # Para el campo disciplina, la llamamos así para mantener consistencia
-                        disciplina_text = tematica.replace("-", " ").title()
+                        # También intentar inferir disciplina desde el nombre
+                        disciplina_inferida = inferir_disciplina(nombre)
+                        if disciplina_inferida and disciplina_inferida != "Otros":
+                            disciplina = disciplina_inferida
 
-                        events.append({
+                        eventos.append({
                             "fuente": "Turismo Asturias",
                             "evento": nombre,
                             "link": enlace,
-                            "lugar": lugar_hyperlink,
+                            "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
                             "fecha": fecha_str,
                             "fecha_fin": fecha_fin_str,
                             "hora": hora,
-                            "disciplina": disciplina_text
+                            "disciplina": disciplina
                         })
 
                         print(f"✅ [{idx}] {nombre} -> {fecha_str} {hora}")
 
                     except Exception as e:
-                        print(f"⚠️ Error procesando evento en página {page}, idx {idx}: {e}")
+                        print(f"⚠️ Error procesando evento en '{tematica}': {e}")
                         continue
 
             except Exception as e:
                 print(f"❌ Error accediendo a {url}: {e}")
                 continue
 
-    print(f"🎉 Total eventos Turismo Asturias importados: {len(events)}")
+    print(f"🎉 Total eventos Turismo Asturias: {len(eventos)}")
     return events
 
 
