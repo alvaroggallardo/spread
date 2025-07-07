@@ -632,6 +632,8 @@ def get_events_conciertosclub():
 # --------------------------
 
 def get_events_turismoasturias(max_pages=10, tematicas=None):
+    from datetime import datetime
+
     base_url = "https://www.turismoasturias.es/agenda-de-asturias"
     events = []
 
@@ -668,30 +670,33 @@ def get_events_turismoasturias(max_pages=10, tematicas=None):
                         lugar = lugar_el.text.strip() if lugar_el else "Asturias"
 
                         # Fechas
-                        # ⬇️ Esto lo hacemos exactamente como Gijón: texto → parse
-                        date_text = ""
+                        fecha_evento = None
                         fecha_inicio_raw = item.select_one("[itemprop='startDate']")
-                        if fecha_inicio_raw:
-                            if fecha_inicio_raw.has_attr("date"):
-                                date_text = fecha_inicio_raw["date"]
-                            else:
-                                date_text = fecha_inicio_raw.get_text(strip=True)
+                        if fecha_inicio_raw and fecha_inicio_raw.has_attr("date"):
+                            try:
+                                fecha_evento = datetime.strptime(
+                                    fecha_inicio_raw["date"],
+                                    "%Y-%m-%d %H:%M:%S.%f"
+                                )
+                            except Exception as e:
+                                print(f"❌ No se pudo parsear startDate: {e}")
 
-                        fecha_evento = dateparser.parse(date_text, languages=["es"]) if date_text else None
+                        fecha_fin = None
+                        fecha_fin_el = item.select_one("[itemprop='endDate']")
+                        if fecha_fin_el and fecha_fin_el.has_attr("date"):
+                            try:
+                                fecha_fin = datetime.strptime(
+                                    fecha_fin_el["date"],
+                                    "%Y-%m-%d %H:%M:%S.%f"
+                                )
+                            except Exception as e:
+                                print(f"❌ No se pudo parsear endDate: {e}")
+                        else:
+                            fecha_fin = fecha_evento
+
                         if not fecha_evento:
                             print(f"❌ Fecha no reconocida, descartado: {title}")
                             continue
-
-                        # Fin de evento
-                        date_fin_text = ""
-                        fecha_fin_el = item.select_one("[itemprop='endDate']")
-                        if fecha_fin_el:
-                            if fecha_fin_el.has_attr("date"):
-                                date_fin_text = fecha_fin_el["date"]
-                            else:
-                                date_fin_text = fecha_fin_el.get_text(strip=True)
-
-                        fecha_fin = dateparser.parse(date_fin_text, languages=["es"]) if date_fin_text else fecha_evento
 
                         # Hora
                         hora_text = ""
@@ -731,6 +736,7 @@ def get_events_turismoasturias(max_pages=10, tematicas=None):
 
     print(f"🎉 Total eventos Turismo Asturias: {len(events)}")
     return events
+
 
 
 
