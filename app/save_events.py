@@ -28,7 +28,7 @@ def guardar_eventos(scrapers=None):
     db = SessionLocal()
 
     if scrapers is None:
-        from app.script_scraping import get_events_gijon, get_events_oviedo, get_events_mieres, get_events_asturiescultura, get_events_aviles, get_events_siero, get_events_conciertosclub
+        from app.script_scraping import get_events_gijon, get_events_oviedo, get_events_mieres, get_events_asturiescultura, get_events_aviles, get_events_siero, get_events_conciertosclub, get_events_turismoasturias
         
         tematicas = ["gastronomia", "museos", "fiestas", "cine-y-espectaculos", "deporte", "ocio-infantil", "rutas-y-visitas-guiadas", "ferias-mercados"]
         
