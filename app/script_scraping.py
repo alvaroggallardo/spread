@@ -714,16 +714,19 @@ def get_events_turismoasturias(max_pages=10, tematicas=None):
                         if disciplina_inferida and disciplina_inferida != "Otros":
                             disciplina = disciplina_inferida
 
-                        events.append({
-                            "fuente": "Turismo Asturias",
-                            "evento": title,
-                            "fecha": fecha_evento,
-                            "fecha_fin": fecha_fin,
-                            "hora": hora_text,
-                            "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
-                            "link": link,
-                            "disciplina": disciplina
-                        })
+                        # Solo si no está ya añadido
+                        if not any(ev["link"] == link for ev in events):
+                            events.append({
+                                "fuente": "Turismo Asturias",
+                                "evento": title,
+                                "fecha": fecha_evento,
+                                "fecha_fin": fecha_fin,
+                                "hora": hora_text,
+                                "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
+                                "link": link,
+                                "disciplina": disciplina
+                            })
+                        
                         print(f"✅ [{idx}] {title} -> {fecha_evento.strftime('%Y-%m-%d')} {hora_text}")
 
                     except Exception as e:

@@ -17,6 +17,7 @@ def parse_date_safe(value):
 def evento_ya_existe(db, ev):
     return db.query(Evento).filter(
         and_(
+            Evento.link == ev.get("link"),
             Evento.evento == ev.get("evento"),
             Evento.fecha == parse_date_safe(ev.get("fecha")),
             Evento.lugar == ev.get("lugar")
