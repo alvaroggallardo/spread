@@ -627,11 +627,8 @@ def get_events_conciertosclub():
 
 
 
-# --------------------------
-# Scraping Turismo Asturias
-# --------------------------
-
 def get_events_turismoasturias(max_pages=10, tematicas=None):
+
     base_url = "https://www.turismoasturias.es/agenda-de-asturias"
     events = []
 
@@ -668,21 +665,25 @@ def get_events_turismoasturias(max_pages=10, tematicas=None):
                         lugar = lugar_el.text.strip() if lugar_el else "Asturias"
 
                         # Fechas
-                        fecha_inicio_raw = item.select_one("[itemprop='startDate']")
-                        fecha_fin_el = item.select_one("[itemprop='endDate']")
-
                         fecha_inicio = None
-                        fecha_fin = None
-
+                        fecha_inicio_raw = item.select_one("[itemprop='startDate']")
                         if fecha_inicio_raw:
-                            fecha_inicio = dateparser.parse(
-                                fecha_inicio_raw["date"], languages=["es"]
-                            )
+                            raw = fecha_inicio_raw.get("date")
+                            if raw:
+                                fecha_inicio = dateparser.parse(raw, languages=["es"])
+                            else:
+                                texto = fecha_inicio_raw.get_text(strip=True)
+                                fecha_inicio = dateparser.parse(texto, languages=["es"])
 
+                        fecha_fin = None
+                        fecha_fin_el = item.select_one("[itemprop='endDate']")
                         if fecha_fin_el:
-                            fecha_fin = dateparser.parse(
-                                fecha_fin_el["date"], languages=["es"]
-                            )
+                            raw = fecha_fin_el.get("date")
+                            if raw:
+                                fecha_fin = dateparser.parse(raw, languages=["es"])
+                            else:
+                                texto = fecha_fin_el.get_text(strip=True)
+                                fecha_fin = dateparser.parse(texto, languages=["es"])
                         else:
                             fecha_fin = fecha_inicio
 
@@ -709,8 +710,8 @@ def get_events_turismoasturias(max_pages=10, tematicas=None):
                         events.append({
                             "fuente": "Turismo Asturias",
                             "evento": title,
-                            "fecha": fecha_inicio,
-                            "fecha_fin": fecha_fin,
+                            "fecha": fecha_inicio.isoformat() if fecha_inicio else None,
+                            "fecha_fin": fecha_fin.isoformat() if fecha_fin else None,
                             "hora": hora_text,
                             "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
                             "link": link,
@@ -728,6 +729,7 @@ def get_events_turismoasturias(max_pages=10, tematicas=None):
 
     print(f"🎉 Total eventos Turismo Asturias: {len(events)}")
     return events
+
 
 
 
