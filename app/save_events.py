@@ -1,5 +1,5 @@
 from app.models import Evento, SessionLocal, init_db
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy import and_
 
 def parse_date_safe(value):
