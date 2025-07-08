@@ -844,6 +844,9 @@ def parse_laboral_cards(cards, visto):
         else:
             hora = ""
 
+        # Disciplina
+        disciplina = inferir_disciplina(title)
+
         eventos.append({
             "fuente": "Laboral Ciudad de la Cultura",
             "evento": title,
@@ -852,87 +855,114 @@ def parse_laboral_cards(cards, visto):
             "hora": hora,
             "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus("Laboral Ciudad de la Cultura Gijón")}", "Laboral Ciudad de la Cultura")',
             "link": link,
-            "disciplina": "Otros"
+            "disciplina": disciplina
         })
 
     return eventos
 
 
 
-# Constantes con los IDs conocidos
-SITE_ID = 3649360
-SECTION_ID = 60825576  # la categoría "Todas" que incluye todos los eventos
+# --------------------------
+# Scraping FiestasAsturias API
+# --------------------------
 
-def get_events_fiestas_api(fechas_objetivo):
-    """
-    Descarga todos los eventos de FiestasAsturias.com en la sección 'Todas',
-    y filtra internamente por las fechas objetivo, incluyendo eventos en rango.
-    """
+SITE_ID = 3649360
+SECTION_ID = 60825576  # categoría "Todas"
+
+def get_events_fiestasasturias_api(max_pages=50):
+
     api_base = "https://api.ww-api.com/front"
     eventos = []
+    vistos = set()
     page = 1
 
-    while True:
-        items_url = (
+    while page <= max_pages:
+        url = (
             f"{api_base}/get_items/{SITE_ID}/{SECTION_ID}/"
             f"?category_index=0&page={page}&per_page=24"
         )
-        res = requests.get(items_url)
-        if res.status_code != 200:
+        print(f"🌐 Descargando página {page}: {url}")
+
+        try:
+            res = requests.get(url, timeout=10)
+            res.raise_for_status()
+            data = res.json()
+        except Exception as e:
+            print(f"❌ Error en página {page}: {e}")
             break
-        data = res.json()
 
-        for it in data.get("items", []):
-            # --- parse inicio ---
-            dt_start = dateparser.parse(it.get("date", ""))
-            if not dt_start:
+        items = data.get("items", [])
+        print(f"📦 Página {page}: {len(items)} eventos encontrados")
+
+        if not items:
+            break
+
+        for idx, it in enumerate(items):
+            try:
+                title = it.get("title", "Sin título")
+                link = it.get("url", "")
+
+                dt_start = dateparser.parse(it.get("date", ""))
+                if not dt_start:
+                    print(f"⚠️ Evento sin fecha, descartado: {title}")
+                    continue
+
+                dt_end = None
+                end_raw = it.get("endDate", "")
+                if end_raw:
+                    dt_end = dateparser.parse(end_raw)
+                if not dt_end:
+                    dt_end = dt_start
+
+                # Clave única para evitar duplicados
+                key = (title, dt_start.date(), link)
+                if key in vistos:
+                    continue
+                vistos.add(key)
+
+                # Lugar
+                lat = it.get("latitude")
+                lon = it.get("longitude")
+                address = it.get("address", "")
+                if lat and lon:
+                    lugar = (
+                        f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={lat},{lon}", '
+                        f'"{address or f"{lat},{lon}"}")'
+                    )
+                elif address:
+                    url_map = it.get("address_url", "")
+                    lugar = f'=HYPERLINK("{url_map}", "{address}")'
+                else:
+                    lugar = ""
+
+                hora = dt_start.strftime("%H:%M") if dt_start.hour else ""
+
+                eventos.append({
+                    "fuente": "FiestasAsturias API",
+                    "evento": title,
+                    "fecha": dt_start,
+                    "fecha_fin": dt_end,
+                    "hora": hora,
+                    "lugar": lugar,
+                    "link": link,
+                    "disciplina": "Fiestas"
+                })
+
+                print(f"✅ [{page}-{idx}] {title} -> {dt_start.date()} {hora}")
+
+            except Exception as e:
+                print(f"⚠️ Error procesando evento en página {page}: {e}")
                 continue
-            if dt_start.tzinfo is not None:
-                dt_start = dt_start.replace(tzinfo=None)
-
-            # --- parse fin (o lo igualamos al inicio) ---
-            end_raw = it.get("endDate", "")
-            if end_raw:
-                dt_end = dateparser.parse(end_raw)
-                if dt_end and dt_end.tzinfo is not None:
-                    dt_end = dt_end.replace(tzinfo=None)
-            else:
-                dt_end = dt_start
-
-            # --- filtro por cualquier fecha objetivo dentro del rango ---
-            if not any(dt_start.date() <= f <= dt_end.date() for f in fechas_objetivo):
-                continue
-
-            # --- lugar con coordenadas o dirección ---
-            lat = it.get("latitude")
-            lon = it.get("longitude")
-            address = it.get("address", "")
-            if lat and lon:
-                lugar = (
-                    f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={lat},{lon}", '
-                    f'"{address or f"{lat},{lon}"}")'
-                )
-            elif address:
-                url = it.get("address_url", "")
-                lugar = f'=HYPERLINK("{url}", "{address}")'
-            else:
-                lugar = ""
-
-            eventos.append({
-                "fuente": "FiestasAsturias API",
-                "evento": it.get("title", "Sin título"),
-                "fecha": dt_start,
-                "fecha_fin": dt_end,
-                "hora": dt_start.strftime("%H:%M") if dt_start.hour else "",
-                "lugar": lugar,
-                "link": it.get("url", ""),
-            })
 
         if not data.get("next_page"):
+            print(f"🚫 No hay más páginas.")
             break
+
         page += 1
 
+    print(f"🎉 Total eventos FiestasAsturias: {len(eventos)}")
     return eventos
+
 
 
 def get_events_asturtur(fechas_objetivo):

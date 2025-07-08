@@ -38,7 +38,8 @@ def guardar_eventos(scrapers=None):
             get_events_siero,
             get_events_conciertosclub,
             get_events_turismoasturias,
-            get_events_laboral
+            get_events_laboral,
+            get_events_fiestasasturias_api
         )
 
         tematicas = [
@@ -61,7 +62,8 @@ def guardar_eventos(scrapers=None):
             # get_events_siero,
             # get_events_conciertosclub,
             #lambda: get_events_turismoasturias(tematicas=tematicas),
-            get_events_laboral
+            get_events_laboral,
+            get_events_fiestasasturias_api
         ]
 
     nuevos = 0
