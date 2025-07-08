@@ -863,13 +863,13 @@ def parse_laboral_cards(cards, visto):
 
 
 # --------------------------
-# Scraping FiestasAsturias API
+# Scraping FiestasAsturias API https://www.fiestasdeasturias.com
 # --------------------------
 
 SITE_ID = 3649360
 SECTION_ID = 60825576  # categoría "Todas"
-
 def get_events_fiestasasturias_api(max_pages=50):
+
 
     api_base = "https://api.ww-api.com/front"
     eventos = []
@@ -937,6 +937,9 @@ def get_events_fiestasasturias_api(max_pages=50):
 
                 hora = dt_start.strftime("%H:%M") if dt_start.hour else ""
 
+                # Disciplina
+                disciplina = inferir_disciplina(title)
+
                 eventos.append({
                     "fuente": "FiestasAsturias API",
                     "evento": title,
@@ -945,7 +948,7 @@ def get_events_fiestasasturias_api(max_pages=50):
                     "hora": hora,
                     "lugar": lugar,
                     "link": link,
-                    "disciplina": "Fiestas"
+                    "disciplina": disciplina
                 })
 
                 print(f"✅ [{page}-{idx}] {title} -> {dt_start.date()} {hora}")
@@ -964,8 +967,12 @@ def get_events_fiestasasturias_api(max_pages=50):
     return eventos
 
 
+# --------------------------
+# Scraping Asturtur
+# --------------------------
 
-def get_events_asturtur(fechas_objetivo):
+def get_events_asturtur(max_pages=1):
+
     base = "https://asturtur.com"
     url = f"{base}/7-dias-en-asturias"
     events = []
@@ -978,96 +985,116 @@ def get_events_asturtur(fechas_objetivo):
     }
 
     try:
-        res = requests.get(url)
+        res = requests.get(url, timeout=10)
         res.raise_for_status()
         soup = BeautifulSoup(res.text, "html.parser")
         cards = soup.select("div.card-body")
+        print(f"📦 Encontrados {len(cards)} eventos en Asturtur")
 
-        for card in cards:
-            title_el = card.select_one("h3.node__title .field--name-title")
-            title = title_el.get_text(strip=True) if title_el else "Sin título"
+        for idx, card in enumerate(cards):
+            try:
+                title_el = card.select_one("h3.node__title .field--name-title")
+                title = title_el.get_text(strip=True) if title_el else "Sin título"
 
-            art = card.find_parent("article")
-            a_block = art.find_parent("a", class_="a-block") if art else None
-            link = urljoin(base, a_block["href"]) if (a_block and a_block.has_attr("href")) else url
+                art = card.find_parent("article")
+                a_block = art.find_parent("a", class_="a-block") if art else None
+                link = urljoin(base, a_block["href"]) if (a_block and a_block.has_attr("href")) else url
 
-            category = card.select_one("span.tipoevent")
-            category = category.get_text(strip=True) if category else ""
+                category_el = card.select_one("span.tipoevent")
+                category = category_el.get_text(strip=True) if category_el else ""
 
-            span_fecha = card.select_one("span.iconed-data-item img[alt='Cuándo']")
-            raw = span_fecha.parent.get_text(" ", strip=True) if span_fecha else ""
+                # Fecha y hora
+                span_fecha = card.select_one("span.iconed-data-item img[alt='Cuándo']")
+                raw = span_fecha.parent.get_text(" ", strip=True) if span_fecha else ""
 
-            dt = None
-            hora = ""
+                dt = None
+                hora = ""
 
-            m1 = re.match(r'^[A-Za-zÁÉÍÓÚÜÑñ]{2,4}\.\s*(\d{1,2}),\s*(\d{1,2})[.:](\d{2})h?', raw)
-            if m1:
-                day_i, hour_i, min_i = map(int, m1.groups())
-                if day_i >= today.day:
-                    month_i, year_i = today.month, today.year
-                else:
-                    month_i, year_i = (1, today.year + 1) if today.month == 12 else (today.month + 1, today.year)
-                dt = datetime(year_i, month_i, day_i, hour_i, min_i)
-                hora = dt.strftime("%H:%M")
-            else:
-                m2 = re.match(
-                    r'^[A-Za-zÁÉÍÓÚÜÑñ]{2,4}\.\s*(\d{1,2})\s+de\s+([A-Za-zñÑ]+),\s*(\d{1,2})[.:](\d{2})h?',
-                    raw
-                )
-                if m2:
-                    day_i = int(m2.group(1))
-                    month_name = m2.group(2).lower()
-                    hour_i = int(m2.group(3))
-                    min_i = int(m2.group(4))
-                    month_i = meses.get(month_name, today.month)
-                    year_i = today.year
-                    if month_i < today.month:
-                        year_i += 1
+                # Ejemplo: Lun. 8, 20:30h
+                m1 = re.match(r'^[A-Za-zÁÉÍÓÚÜÑñ]{2,4}\.\s*(\d{1,2}),\s*(\d{1,2})[.:](\d{2})h?', raw)
+                if m1:
+                    day_i, hour_i, min_i = map(int, m1.groups())
+                    month_i, year_i = (today.month, today.year) if day_i >= today.day else \
+                                      ((1, today.year + 1) if today.month == 12 else (today.month + 1, today.year))
                     dt = datetime(year_i, month_i, day_i, hour_i, min_i)
                     hora = dt.strftime("%H:%M")
+
                 else:
-                    clean = raw.replace(",", "").replace("h", "").replace(".", ":")
-                    dt = dateparser.parse(clean, languages=["es"])
-                    if dt:
+                    # Ejemplo: Lun. 8 de julio, 20:30h
+                    m2 = re.match(
+                        r'^[A-Za-zÁÉÍÓÚÜÑñ]{2,4}\.\s*(\d{1,2})\s+de\s+([A-Za-zñÑ]+),\s*(\d{1,2})[.:](\d{2})h?',
+                        raw
+                    )
+                    if m2:
+                        day_i = int(m2.group(1))
+                        month_name = m2.group(2).lower()
+                        hour_i = int(m2.group(3))
+                        min_i = int(m2.group(4))
+                        month_i = meses.get(month_name, today.month)
+                        year_i = today.year
+                        if month_i < today.month:
+                            year_i += 1
+                        dt = datetime(year_i, month_i, day_i, hour_i, min_i)
                         hora = dt.strftime("%H:%M")
                     else:
-                        continue
+                        # Tercer intento con dateparser
+                        clean = raw.replace(",", "").replace("h", "").replace(".", ":")
+                        dt = dateparser.parse(clean, languages=["es"])
+                        if dt:
+                            hora = dt.strftime("%H:%M")
+                        else:
+                            print(f"⚠️ No se pudo parsear la fecha: {raw}")
+                            continue
 
-            # 💡 FILTRO: solo si la fecha está en el conjunto objetivo
-            if not dt or dt.date() not in fechas_objetivo:
+                if not dt:
+                    continue
+
+                # Lugar
+                loc_txt = ""
+                try:
+                    d = requests.get(link, timeout=10)
+                    d.raise_for_status()
+                    dsoup = BeautifulSoup(d.text, "html.parser")
+                    cont = dsoup.select_one("span.lh-1")
+                    if cont:
+                        parts = [sp.get_text(strip=True).lstrip("@") for sp in cont.select("span.smaller90")]
+                        loc_txt = " ".join(parts)
+                except Exception:
+                    loc_txt = ""
+
+                lugar = ""
+                if loc_txt:
+                    q = quote_plus(loc_txt)
+                    lugar = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={q}", "{loc_txt}")'
+
+                # Inferir disciplina
+                disciplina_inferida = inferir_disciplina(title)
+                disciplina_final = disciplina_inferida if disciplina_inferida != "Otros" else category.title()
+
+                events.append({
+                    "fuente": "Asturtur",
+                    "evento": title,
+                    "fecha": dt,
+                    "fecha_fin": dt,
+                    "hora": hora,
+                    "lugar": lugar,
+                    "link": link,
+                    "disciplina": disciplina
+                })
+
+                print(f"✅ [{idx}] {title} -> {dt.strftime('%Y-%m-%d')} {hora}")
+
+            except Exception as e:
+                print(f"⚠️ Error procesando evento Asturtur: {e}")
                 continue
 
-            loc_txt = ""
-            try:
-                d = requests.get(link)
-                d.raise_for_status()
-                dsoup = BeautifulSoup(d.text, "html.parser")
-                cont = dsoup.select_one("span.lh-1")
-                if cont:
-                    parts = [sp.get_text(strip=True).lstrip("@") for sp in cont.select("span.smaller90")]
-                    loc_txt = " ".join(parts)
-            except Exception:
-                loc_txt = ""
-
-            lugar = ""
-            if loc_txt:
-                q = quote_plus(loc_txt)
-                lugar = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={q}", "{loc_txt}")'
-
-            events.append({
-                "fuente": "Asturtur",
-                "evento": title,
-                "categoria": category,
-                "fecha": dt,
-                "hora": hora,
-                "lugar": lugar,
-                "link": link
-            })
-
     except Exception as e:
-        print(f"❌ Error en Asturtur: {e}")
+        print(f"❌ Error accediendo a Asturtur: {e}")
 
+    print(f"🎉 Total eventos Asturtur: {len(events)}")
     return events
+
+
 
 
 def inferir_disciplina(titulo):
