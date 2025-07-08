@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
@@ -9,6 +9,9 @@ from app.schemas import EventoSchema
 from datetime import date
 import os
 from fastapi.middleware.cors import CORSMiddleware
+
+SECRET_TOKEN = os.getenv("API_SECRET_TOKEN")
+API_TOKEN = os.getenv("MY_API_TOKEN", "")
 
 app = FastAPI()
 
@@ -30,6 +33,27 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def check_token(x_api_token: str = Header(...)):
+    expected_token = os.getenv("API_SECRET_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="API_SECRET_TOKEN no está configurado en el entorno."
+        )
+    if x_api_token != expected_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido."
+        )
+
+def verify_token(authorization: str = Header(...)):
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    
+    token = authorization.split(" ")[1]
+    if token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid Token")
 
 @app.get("/check-tabla-eventos", summary="Comprobar si existe la tabla eventos", description="Devuelve true/false según la existencia de la tabla en la base de datos")
 def check_tabla_eventos():
@@ -68,7 +92,7 @@ def listar_eventos(
     return query.all()
 
 @app.post("/scrap", summary="Scrapear eventos")
-def scrapear():
+def scrapear(security: str = Depends(check_token)):
     try:
         total_insertados = guardar_eventos()
         return {"status": "OK", "insertados": total_insertados}
@@ -76,7 +100,7 @@ def scrapear():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/borrar-eventos", summary="Vaciar la tabla eventos")
-def borrar_eventos():
+def borrar_eventos(security: str = Depends(check_token)):
     db = SessionLocal()
     try:
         num_rows = db.query(Evento).delete()
