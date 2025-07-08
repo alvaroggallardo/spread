@@ -59,7 +59,7 @@ def custom_openapi():
     app.openapi_schema = openapi_schema
     return openapi_schema
 
-app = FastAPI(dependencies=[Depends(check_token)])
+app = FastAPI()
 app.openapi = custom_openapi
 
 origins = [
