@@ -766,13 +766,14 @@ def get_events_laboral(max_pages=10):
 
     base_url = "https://www.laboralciudaddelacultura.com/agenda"
     events = []
+    visto = set()
 
     # Scrape page 1
     res = requests.get(base_url)
     soup = BeautifulSoup(res.text, "html.parser")
     cards = soup.select("div.card[itemtype='http://schema.org/Event']")
     print(f"🔎 Página 1: {len(cards)} eventos")
-    events.extend(parse_laboral_cards(cards))
+    events.extend(parse_laboral_cards(cards, visto))
 
     # Scrape following pages
     for page in range(2, max_pages + 1):
@@ -796,13 +797,13 @@ def get_events_laboral(max_pages=10):
             print("🚫 No hay más eventos.")
             break
 
-        events.extend(parse_laboral_cards(cards))
+        events.extend(parse_laboral_cards(cards, visto))
 
     print(f"🎉 Total eventos Laboral: {len(events)}")
     return events
 
 
-def parse_laboral_cards(cards):
+def parse_laboral_cards(cards, visto):
     from urllib.parse import urljoin, quote_plus
     import re
     from datetime import datetime
@@ -828,6 +829,13 @@ def parse_laboral_cards(cards):
         start_dt = datetime.strptime(start_date.split()[0], "%Y-%m-%d")
         end_dt = datetime.strptime(end_date.split()[0], "%Y-%m-%d")
 
+        # CLAVE ÚNICA
+        key = (title, start_dt.date(), link)
+        if key in visto:
+            # ✅ Evento ya procesado → skip
+            continue
+        visto.add(key)
+
         hora_el = card.select_one("span.d-block.hour")
         if hora_el:
             hora_text = hora_el.get_text(" ", strip=True)
@@ -844,11 +852,10 @@ def parse_laboral_cards(cards):
             "hora": hora,
             "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus("Laboral Ciudad de la Cultura Gijón")}", "Laboral Ciudad de la Cultura")',
             "link": link,
-            "disciplina": "Otros"   # O inferir disciplina por título si quieres
+            "disciplina": "Otros"
         })
 
     return eventos
-
 
 
 
