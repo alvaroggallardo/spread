@@ -1,5 +1,9 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Header
+from fastapi import FastAPI, HTTPException, Depends, status, Header, Security
+from fastapi.security import APIKeyHeader
+from fastapi.security import APIKeyHeader
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -8,12 +12,55 @@ from app.save_events import guardar_eventos
 from app.schemas import EventoSchema
 from datetime import date
 import os
-from fastapi.middleware.cors import CORSMiddleware
+
 
 SECRET_TOKEN = os.getenv("API_SECRET_TOKEN")
 API_TOKEN = os.getenv("MY_API_TOKEN", "")
 
-app = FastAPI()
+api_key_header = APIKeyHeader(name="X-API-Token", auto_error=False) #craemos el esquema de seguridad
+
+def check_token(x_api_token: str = Security(api_key_header)):
+    expected_token = os.getenv("API_SECRET_TOKEN")
+    if not expected_token:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="API_SECRET_TOKEN no está configurado en el entorno."
+        )
+    if x_api_token != expected_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido."
+        )
+
+#hace que te puedas loguear en fast api
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title="Mi API privada",
+        version="1.0.0",
+        description="API protegida con token",
+        routes=app.routes,
+    )
+
+    openapi_schema["components"]["securitySchemes"] = {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-API-Token"
+        }
+    }
+
+    for path in openapi_schema["paths"].values():
+        for method in path.values():
+            method.setdefault("security", []).append({"ApiKeyAuth": []})
+
+    app.openapi_schema = openapi_schema
+    return openapi_schema
+
+app = FastAPI(dependencies=[Depends(check_token)])
+app.openapi = custom_openapi
 
 origins = [
     "*"
@@ -33,19 +80,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
-def check_token(x_api_token: str = Header(...)):
-    expected_token = os.getenv("API_SECRET_TOKEN")
-    if not expected_token:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="API_SECRET_TOKEN no está configurado en el entorno."
-        )
-    if x_api_token != expected_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token inválido."
-        )
 
 def verify_token(authorization: str = Header(...)):
     if not authorization.startswith("Bearer "):
