@@ -93,6 +93,11 @@ def get_events_oviedo(max_days_ahead=90):
 
                 disciplina = inferir_disciplina(title)
 
+                # ✅ Check duplicados por link
+                if any(ev["link"] == link for ev in events):
+                    print(f"🔁 Evento duplicado saltado: {title}")
+                    continue
+
                 events.append({
                     "fuente": "VisitOviedo",
                     "evento": title,
@@ -112,8 +117,6 @@ def get_events_oviedo(max_days_ahead=90):
 
     print(f"🎉 Total eventos Oviedo: {len(events)}")
     return events
-
-
 
 # --------------------------
 # Scraping Gijón desde la API AJAX
@@ -143,6 +146,11 @@ def get_events_gijon(max_pages=100):
                 title = title_el.text.strip() if title_el else "Sin título"
                 link = "https://www.gijon.es" + title_el["href"] if title_el else ""
                 print(f"🔹 [{idx}] Título: {title}")
+
+                # ✅ Evitar duplicados
+                if any(ev["link"] == link for ev in events):
+                    print(f"🔁 Evento duplicado saltado: {title}")
+                    continue
 
                 # Fecha
                 date_text = ""
@@ -186,7 +194,6 @@ def get_events_gijon(max_pages=100):
     print(f"🎉 Total eventos Gijón: {len(events)}")
     return events
 
-
 # --------------------------
 # Scraping Mieres desde página nueva de calendario ics
 # --------------------------
@@ -214,6 +221,11 @@ def get_events_mieres():
 
         disciplina = inferir_disciplina(title)
 
+        # ✅ Evitar duplicados
+        if any(ev["link"] == link for ev in events):
+            print(f"🔁 Evento duplicado saltado: {title}")
+            continue
+
         events.append({
             "fuente": "Mieres",
             "evento": title,
@@ -229,6 +241,7 @@ def get_events_mieres():
     print(f"🎉 Total eventos Mieres (ICS): {len(events)}")
 
     return events
+
 
 # --------------------------
 # Scraping Asturias Cultura
@@ -263,6 +276,11 @@ def get_events_asturiescultura(max_pages=20):
                 link = urljoin(base_url, title_el['href']) if title_el else ""
 
                 print(f"🔹 [{idx}] Título: {title}")
+
+                # Evitar duplicados
+                if any(ev["link"] == link for ev in events):
+                    print(f"🔁 Evento duplicado saltado: {title}")
+                    continue
 
                 # Fecha y lugar
                 strong_el = e.select_one("p.album strong")
@@ -324,7 +342,6 @@ def get_events_asturiescultura(max_pages=20):
 
     print(f"🎉 Total eventos Asturies Cultura en Rede: {len(events)}")
     return events
-
 
 # --------------------------
 # Scraping Avilés
@@ -741,12 +758,15 @@ def get_events_turismoasturias(max_pages=10, tematicas=None):
     return events
 
 
+# --------------------------
+# Scraping Laboral Ciudad de la Cultura
+# --------------------------
 
+def get_events_laboral(max_pages=1):
 
-def get_events_laboral(fechas_objetivo):
     base_url = "https://www.laboralciudaddelacultura.com"
     base_path = "/agenda"
-    eventos = []
+    events = []
 
     categorias = {
         "Actividades especiales": "3564612",
@@ -783,55 +803,69 @@ def get_events_laboral(fechas_objetivo):
         }
 
         try:
-            res = requests.get(urljoin(base_url, base_path), params=params)
+            res = requests.get(urljoin(base_url, base_path), params=params, timeout=10)
             res.raise_for_status()
             soup = BeautifulSoup(res.text, "html.parser")
             cards = soup.select("div.card[itemtype='http://schema.org/Event']")
+            print(f"🔎 [{disciplina}] encontrados {len(cards)} eventos")
 
-            for card in cards:
-                title_el = card.select_one("span.card-title")
-                title = title_el.get_text(strip=True) if title_el else "Sin título"
+            for idx, card in enumerate(cards):
+                try:
+                    # Título
+                    title_el = card.select_one("span.card-title")
+                    title = title_el.get_text(strip=True) if title_el else "Sin título"
 
-                link_el = card.select_one("a.d-block")
-                link = urljoin(base_url, link_el["href"]) if link_el else base_url
+                    # Link
+                    link_el = card.select_one("a.d-block")
+                    link = urljoin(base_url, link_el["href"]) if link_el else base_url
 
-                start_el = card.select_one("[itemprop='startDate']")
-                end_el = card.select_one("[itemprop='endDate']")
-                start_date = start_el["date"] if start_el and "date" in start_el.attrs else None
-                end_date = end_el["date"] if end_el and "date" in end_el.attrs else start_date
+                    # Fechas
+                    start_el = card.select_one("[itemprop='startDate']")
+                    end_el = card.select_one("[itemprop='endDate']")
+                    start_date = start_el["date"] if start_el and "date" in start_el.attrs else None
+                    end_date = end_el["date"] if end_el and "date" in end_el.attrs else start_date
 
-                if not start_date:
-                    continue
+                    if not start_date:
+                        print(f"❌ Sin fecha, descartado: {title}")
+                        continue
 
-                start_dt = datetime.strptime(start_date.split()[0], "%Y-%m-%d")
-                end_dt = datetime.strptime(end_date.split()[0], "%Y-%m-%d")
+                    fecha_inicio = datetime.strptime(start_date.split()[0], "%Y-%m-%d")
+                    fecha_fin = datetime.strptime(end_date.split()[0], "%Y-%m-%d") if end_date else fecha_inicio
 
-                # ❗ Filtro por fechas objetivo
-                if not any(start_dt.date() <= f <= end_dt.date() for f in fechas_objetivo):
-                    continue
-
-                hora_el = card.select_one("span.d-block.hour")
-                if hora_el:
-                    hora_text = hora_el.get_text(" ", strip=True)
-                    match = re.search(r"\b\d{1,2}:\d{2}\b", hora_text)
-                    hora = match.group(0) if match else ""
-                else:
+                    # Hora
+                    hora_el = card.select_one("span.d-block.hour")
                     hora = ""
+                    if hora_el:
+                        hora_text = hora_el.get_text(" ", strip=True)
+                        match = re.search(r"\b\d{1,2}:\d{2}\b", hora_text)
+                        hora = match.group(0) if match else ""
 
-                eventos.append({
-                    "fuente": "Laboral Ciudad de la Cultura",
-                    "evento": title,
-                    "fecha": start_dt,
-                    "fecha_fin": end_dt,
-                    "hora": hora,
-                    "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus("Laboral Ciudad de la Cultura Gijón")}", "Laboral Ciudad de la Cultura")',
-                    "link": link,
-                    "disciplina": disciplina
-                })
+                    lugar = "Laboral Ciudad de la Cultura"
+                    lugar_hyperlink = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")'
+
+                    events.append({
+                        "fuente": "Laboral Ciudad de la Cultura",
+                        "evento": title,
+                        "fecha": fecha_inicio.isoformat(),
+                        "fecha_fin": fecha_fin.isoformat() if fecha_fin else None,
+                        "hora": hora,
+                        "lugar": lugar_hyperlink,
+                        "link": link,
+                        "disciplina": disciplina
+                    })
+
+                    print(f"✅ [{disciplina}][{idx}] {title} -> {fecha_inicio.date()} {hora}")
+
+                except Exception as e:
+                    print(f"⚠️ [{disciplina}][{idx}] Error procesando evento: {e}")
+                    continue
+
         except Exception as e:
-            print(f"Error accediendo a la categoría '{disciplina}': {e}")
+            print(f"❌ Error accediendo a la categoría '{disciplina}': {e}")
 
-    return eventos
+    print(f"🎉 Total eventos Laboral: {len(events)}")
+    return events
+
 
 
 # Constantes con los IDs conocidos
