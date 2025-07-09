@@ -12,12 +12,23 @@ from app.save_events import guardar_eventos
 from app.schemas import EventoSchema
 from datetime import date
 import os
+import requests
 
+# ------------------------
+# CONFIGURACIONES
+# ------------------------
 
 SECRET_TOKEN = os.getenv("API_SECRET_TOKEN")
 API_TOKEN = os.getenv("MY_API_TOKEN", "")
 
-api_key_header = APIKeyHeader(name="X-API-Token", auto_error=False) #craemos el esquema de seguridad
+# URL de Railway a la que quieres llamar desde tu proxy
+RAILWAY_EVENTOS_URL = "https://web-production-1f968.up.railway.app/eventos"
+
+# ------------------------
+# SEGURIDAD
+# ------------------------
+
+api_key_header = APIKeyHeader(name="X-API-Token", auto_error=False)
 
 def check_token(x_api_token: str = Security(api_key_header)):
     if not SECRET_TOKEN:
@@ -31,7 +42,10 @@ def check_token(x_api_token: str = Security(api_key_header)):
             detail="Token inválido."
         )
 
-#hace que te puedas loguear en fast api
+# ------------------------
+# OPENAPI CUSTOMIZATION
+# ------------------------
+
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
@@ -61,9 +75,11 @@ def custom_openapi():
 app = FastAPI()
 app.openapi = custom_openapi
 
-origins = [
-    "*"
-]
+# ------------------------
+# CORS
+# ------------------------
+
+origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -73,6 +89,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ------------------------
+# DB UTILS
+# ------------------------
+
 def get_db():
     db = SessionLocal()
     try:
@@ -80,21 +100,17 @@ def get_db():
     finally:
         db.close()
 
-def verify_token(authorization: str = Header(...)):
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
-    
-    token = authorization.split(" ")[1]
-    if token != API_TOKEN:
-        raise HTTPException(status_code=401, detail="Invalid Token")
+# ------------------------
+# ENDPOINTS
+# ------------------------
 
-@app.get("/check-tabla-eventos", summary="Comprobar si existe la tabla eventos", description="Devuelve true/false según la existencia de la tabla en la base de datos", dependencies=[Depends(check_token)])
+@app.get("/check-tabla-eventos", dependencies=[Depends(check_token)])
 def check_tabla_eventos():
     inspector = inspect(SessionLocal().bind)
     tablas = inspector.get_table_names()
     return {"tabla_eventos_existe": "eventos" in tablas}
 
-@app.get("/crear-tabla-eventos", summary="Crear tabla eventos", description="Crea la tabla eventos si no existe. No borra datos existentes.", dependencies=[Depends(check_token)])
+@app.get("/crear-tabla-eventos", dependencies=[Depends(check_token)])
 def crear_tabla_eventos():
     from app.models import Base, engine
     inspector = inspect(engine)
@@ -124,7 +140,7 @@ def listar_eventos(
     
     return query.all()
 
-@app.post("/scrap", summary="Scrapear eventos", dependencies=[Depends(check_token)])
+@app.post("/scrap", dependencies=[Depends(check_token)])
 def scrapear(security: str = Depends(check_token)):
     try:
         total_insertados = guardar_eventos()
@@ -132,7 +148,7 @@ def scrapear(security: str = Depends(check_token)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/borrar-eventos", summary="Vaciar la tabla eventos", dependencies=[Depends(check_token)])
+@app.delete("/borrar-eventos", dependencies=[Depends(check_token)])
 def borrar_eventos(security: str = Depends(check_token)):
     db = SessionLocal()
     try:
@@ -153,7 +169,7 @@ def scrap_get_friendly():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/debug", summary="Depurar estado de la base de datos", dependencies=[Depends(check_token)])
+@app.get("/debug", dependencies=[Depends(check_token)])
 def depurar_eventos():
     db = SessionLocal()
     try:
@@ -162,7 +178,6 @@ def depurar_eventos():
         for r in resultado:
             r.pop("_sa_instance_state", None)
 
-        # Información del motor de base de datos
         engine = db.get_bind()
         inspector = inspect(engine)
 
@@ -179,7 +194,7 @@ def depurar_eventos():
         return {"error": str(e)}
     finally:
         db.close()
-        
+
 @app.get("/env-check", dependencies=[Depends(check_token)])
 def env_check():
     return dict(os.environ)
@@ -187,6 +202,25 @@ def env_check():
 @app.get("/")
 def check_root():
     return {"message": "¡Estoy vivo!", "base_url": os.getenv("RAILWAY_ROOT_PATH", "/")}
+
+# ---------------------------------------------------
+# NUEVO ENDPOINT PROXY HACIA RAILWAY
+# ---------------------------------------------------
+
+@app.get("/proxy/eventos", dependencies=[Depends(check_token)])
+def proxy_eventos():
+    """
+    Proxy seguro hacia Railway, usando el token guardado en el backend.
+    """
+    try:
+        res = requests.get(
+            RAILWAY_EVENTOS_URL,
+            headers={"X-API-Token": SECRET_TOKEN}
+        )
+        res.raise_for_status()
+        return res.json()
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ✅ Entrada principal para Railway y local
 if __name__ == "__main__":
