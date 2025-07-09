@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends, status, Header, Security
 from fastapi.security import APIKeyHeader
-from fastapi.security import APIKeyHeader
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -20,13 +20,12 @@ API_TOKEN = os.getenv("MY_API_TOKEN", "")
 api_key_header = APIKeyHeader(name="X-API-Token", auto_error=False) #craemos el esquema de seguridad
 
 def check_token(x_api_token: str = Security(api_key_header)):
-    expected_token = os.getenv("API_SECRET_TOKEN")
-    if not expected_token:
+    if not SECRET_TOKEN:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="API_SECRET_TOKEN no está configurado en el entorno."
         )
-    if x_api_token != expected_token:
+    if x_api_token != SECRET_TOKEN:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token inválido."
@@ -51,6 +50,10 @@ def custom_openapi():
             "name": "X-API-Token"
         }
     }
+
+    for path in openapi_schema["paths"].values():
+        for method in path.values():
+            method.setdefault("security", []).append({"ApiKeyAuth": []})
 
     app.openapi_schema = openapi_schema
     return openapi_schema
@@ -85,13 +88,13 @@ def verify_token(authorization: str = Header(...)):
     if token != API_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid Token")
 
-@app.get("/check-tabla-eventos", summary="Comprobar si existe la tabla eventos", description="Devuelve true/false según la existencia de la tabla en la base de datos")
+@app.get("/check-tabla-eventos", summary="Comprobar si existe la tabla eventos", description="Devuelve true/false según la existencia de la tabla en la base de datos", dependencies=[Depends(check_token)])
 def check_tabla_eventos():
     inspector = inspect(SessionLocal().bind)
     tablas = inspector.get_table_names()
     return {"tabla_eventos_existe": "eventos" in tablas}
 
-@app.get("/crear-tabla-eventos", summary="Crear tabla eventos", description="Crea la tabla eventos si no existe. No borra datos existentes.")
+@app.get("/crear-tabla-eventos", summary="Crear tabla eventos", description="Crea la tabla eventos si no existe. No borra datos existentes.", dependencies=[Depends(check_token)])
 def crear_tabla_eventos():
     from app.models import Base, engine
     inspector = inspect(engine)
@@ -100,7 +103,7 @@ def crear_tabla_eventos():
     Base.metadata.create_all(bind=engine)
     return {"status": "Tabla eventos creada"}
 
-@app.get("/eventos", response_model=List[EventoSchema])
+@app.get("/eventos", response_model=List[EventoSchema], dependencies=[Depends(check_token)])
 def listar_eventos(
     disciplina: Optional[str] = None,
     fecha_inicio: Optional[date] = None,
@@ -121,7 +124,7 @@ def listar_eventos(
     
     return query.all()
 
-@app.post("/scrap", summary="Scrapear eventos")
+@app.post("/scrap", summary="Scrapear eventos", dependencies=[Depends(check_token)])
 def scrapear(security: str = Depends(check_token)):
     try:
         total_insertados = guardar_eventos()
@@ -129,7 +132,7 @@ def scrapear(security: str = Depends(check_token)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/borrar-eventos", summary="Vaciar la tabla eventos")
+@app.delete("/borrar-eventos", summary="Vaciar la tabla eventos", dependencies=[Depends(check_token)])
 def borrar_eventos(security: str = Depends(check_token)):
     db = SessionLocal()
     try:
@@ -142,7 +145,7 @@ def borrar_eventos(security: str = Depends(check_token)):
     finally:
         db.close()
 
-@app.get("/scrap-test")
+@app.get("/scrap-test", dependencies=[Depends(check_token)])
 def scrap_get_friendly():
     try:
         nuevos = guardar_eventos()
@@ -150,7 +153,7 @@ def scrap_get_friendly():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/debug", summary="Depurar estado de la base de datos")
+@app.get("/debug", summary="Depurar estado de la base de datos", dependencies=[Depends(check_token)])
 def depurar_eventos():
     db = SessionLocal()
     try:
@@ -177,7 +180,7 @@ def depurar_eventos():
     finally:
         db.close()
         
-@app.get("/env-check")
+@app.get("/env-check", dependencies=[Depends(check_token)])
 def env_check():
     return dict(os.environ)
 
