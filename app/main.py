@@ -13,6 +13,9 @@ from app.schemas import EventoSchema
 from datetime import date
 import os
 import requests
+import time
+
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # ------------------------
 # CONFIGURACIONES
@@ -74,6 +77,41 @@ def custom_openapi():
 
 app = FastAPI()
 app.openapi = custom_openapi
+
+# ------------------------
+# CRON
+# ------------------------
+
+def job_scrap():
+    try:
+        print("🕒 Ejecutando borrado y scrapping programado...")
+
+        res_delete = requests.delete(
+            "https://web-production-1f968.up.railway.app/borrar-eventos",
+            headers={"X-API-Token": SECRET_TOKEN}
+        )
+        print(f"Borrar eventos: {res_delete.status_code} → {res_delete.text}")
+
+        time.sleep(5)
+
+        res_scrap = requests.post(
+            "https://web-production-1f968.up.railway.app/scrap",
+            headers={"X-API-Token": SECRET_TOKEN}
+        )
+        print(f"Scrap: {res_scrap.status_code} → {res_scrap.text}")
+
+    except Exception as e:
+        print("❌ Error en tarea programada:", e)
+        
+scheduler = BackgroundScheduler()
+scheduler.add_job(
+    job_scrap,
+    "cron",
+    day_of_week="mon",   # lunes
+    hour=3,
+    minute=0
+)
+scheduler.start()
 
 # ------------------------
 # CORS
