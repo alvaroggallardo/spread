@@ -10,3 +10,4 @@ geopy
 webdriver-manager
 psycopg2-binary
 ics
+apscheduler>=3.10
