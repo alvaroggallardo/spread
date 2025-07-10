@@ -119,7 +119,8 @@ def crear_tabla_eventos():
     Base.metadata.create_all(bind=engine)
     return {"status": "Tabla eventos creada"}
 
-@app.get("/eventos", response_model=List[EventoSchema], dependencies=[Depends(check_token)])
+# 🚨 AHORA este endpoint ES PÚBLICO (sin Depends(check_token))
+@app.get("/eventos", response_model=List[EventoSchema])
 def listar_eventos(
     disciplina: Optional[str] = None,
     fecha_inicio: Optional[date] = None,
@@ -204,7 +205,7 @@ def check_root():
     return {"message": "¡Estoy vivo!", "base_url": os.getenv("RAILWAY_ROOT_PATH", "/")}
 
 # ---------------------------------------------------
-# NUEVO ENDPOINT PROXY HACIA RAILWAY
+# PROXY HACIA RAILWAY (opcional, si quieres mantenerlo)
 # ---------------------------------------------------
 
 @app.get("/proxy/eventos", dependencies=[Depends(check_token)])
