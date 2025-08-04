@@ -965,6 +965,58 @@ def get_events_fiestasasturias_api(max_pages=50):
     print(f"🎉 Total eventos FiestasAsturias: {len(eventos)}")
     return eventos
 
+# --------------------------
+# Scraping FiestasAsturias API https://www.fiestasdeasturias.com
+# --------------------------
+def get_events_fiestasasturias_simcal():
+    url = "https://www.asturiasdefiesta.es/agenda/"
+    events = []
+
+    try:
+        res = requests.get(url, timeout=10)
+        if res.status_code != 200:
+            print(f"❌ Error al cargar la página: {res.status_code}")
+            return []
+
+        soup = BeautifulSoup(res.content, "html.parser")
+
+        for li in soup.select("li.simcal-event"):
+            title_el = li.select_one(".simcal-event-title")
+            details_el = li.select_one(".simcal-event-details")
+
+            title = title_el.get_text(strip=True) if title_el else "Sin título"
+            title = f"🎉 {title}"  # Agregar icono de celebración al título
+
+            start_el = details_el.select_one(".simcal-event-start") if details_el else None
+            end_el = details_el.select_one(".simcal-event-end") if details_el else None
+
+            start_date = parser.parse(start_el["content"]) if start_el and "content" in start_el.attrs else None
+            end_date = parser.parse(end_el["content"]) if end_el and "content" in end_el.attrs else None
+
+            link_el = details_el.select_one("a") if details_el else None
+            link = link_el["href"] if link_el and "href" in link_el.attrs else ""
+
+            # Disciplina
+            disciplina = inferir_disciplina(title)
+
+            events.append({
+                "fuente": "FiestasAsturias",
+                "evento": title,
+                "fecha": start_date,
+                "fecha_fin": end_date,
+                "hora": "",
+                "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus("Asturias")}", "Asturias")',
+                "link": link,
+                "disciplina": disciplina
+            })
+
+        print(f"✅ Eventos extraídos desde simcal-calendar: {len(events)}")
+
+    except Exception as e:
+        print(f"❌ Error en get_events_fiestasasturias_simcal: {e}")
+
+    return events
+
 
 def inferir_disciplina(titulo):
     titulo = titulo.lower()
