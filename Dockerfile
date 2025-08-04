@@ -1,4 +1,4 @@
-FROM python:3.10-slim-buster
+FROM python:3.10-bookworm
 
 # Instalación robusta de Chromium y sus dependencias
 RUN apt-get update && apt-get install -y \
