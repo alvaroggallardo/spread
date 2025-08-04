@@ -79,7 +79,7 @@ app = FastAPI()
 app.openapi = custom_openapi
 
 # ------------------------
-# CRON
+# CRON 
 # ------------------------
 
 def job_scrap():
@@ -271,3 +271,4 @@ print("✅ FastAPI app cargada")
 print("📌 Rutas disponibles:")
 for route in app.routes:
     print(route.path)
+"# forzar redeploy otra vez ??" 
