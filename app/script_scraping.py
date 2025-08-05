@@ -969,7 +969,7 @@ def get_events_fiestasasturias_api(max_pages=50):
 # Scraping FiestasAsturias API https://www.fiestasdeasturias.com
 # --------------------------
 def get_events_fiestasasturias_simcal():
-    url = "https://www.asturiasdefiesta.es/agenda/"
+    url = "https://www.asturiasdefiesta.es/calendario-de-fiestas"
     events = []
 
     try:
