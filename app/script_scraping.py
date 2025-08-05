@@ -19,6 +19,7 @@ import re
 from urllib.parse import urljoin, quote_plus
 from datetime import datetime, timedelta
 from ics import Calendar
+from dateutil import parser
 
 # --------------------------
 # Geocoding
