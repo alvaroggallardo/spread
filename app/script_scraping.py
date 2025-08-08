@@ -986,7 +986,7 @@ def get_events_fiestasasturias_simcal():
             details_el = li.select_one(".simcal-event-details")
 
             title = title_el.get_text(strip=True) if title_el else "Sin título"
-            title = f"🎉 {title}"  # Agregar icono de celebración al título
+            title = f"🎉 {title}"
 
             start_el = details_el.select_one(".simcal-event-start") if details_el else None
             end_el = details_el.select_one(".simcal-event-end") if details_el else None
@@ -997,7 +997,11 @@ def get_events_fiestasasturias_simcal():
             link_el = details_el.select_one("a") if details_el else None
             link = link_el["href"] if link_el and "href" in link_el.attrs else ""
 
-            # Disciplina
+            # ✅ Evitar duplicados por enlace y fecha de inicio
+            if any(ev["link"] == link and ev["fecha"] == start_date for ev in events):
+                print(f"🔁 Evento duplicado saltado: {title}")
+                continue
+
             disciplina = inferir_disciplina(title)
 
             events.append({

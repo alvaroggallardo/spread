@@ -87,7 +87,7 @@ def job_scrap():
         print("🕒 Ejecutando borrado y scrapping programado...")
 
         res_delete = requests.delete(
-            "https://web-production-1f968.up.railway.app/borrar-eventos",
+            "https://spread-production-b053.up.railway.app/borrar-eventos",
             headers={"X-API-Token": SECRET_TOKEN}
         )
         print(f"Borrar eventos: {res_delete.status_code} → {res_delete.text}")
@@ -95,7 +95,7 @@ def job_scrap():
         time.sleep(5)
 
         res_scrap = requests.post(
-            "https://web-production-1f968.up.railway.app/scrap",
+            "https://spread-production-b053.up.railway.app/scrap",
             headers={"X-API-Token": SECRET_TOKEN}
         )
         print(f"Scrap: {res_scrap.status_code} → {res_scrap.text}")
