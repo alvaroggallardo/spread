@@ -271,4 +271,4 @@ print("✅ FastAPI app cargada")
 print("📌 Rutas disponibles:")
 for route in app.routes:
     print(route.path)
-"# forzar redeploy otra vez ??" 
+"# forzar redeploy otra vez ??"  
