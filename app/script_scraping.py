@@ -1320,7 +1320,7 @@ def get_events_asturiasconvivencias():
 # https://umamigijon.com/cursos/
 # --------------------------
 def get_events_gijon_umami(max_days_ahead=90):
-    url = "https://umamigijon.com/disfruta/"
+    url = "https://umamigijon.com/cursos/"
     events = []
     driver = get_selenium_driver(headless=True)
 
