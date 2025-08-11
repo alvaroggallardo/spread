@@ -43,7 +43,8 @@ def guardar_eventos(scrapers=None):
             get_events_fiestasasturias_simcal,
             get_events_camaragijon_recinto,
             get_events_laboral_actividades,
-            get_events_asturiasconvivencias
+            get_events_asturiasconvivencias,
+            get_events_umami_cursos
         )
 
         tematicas = [
@@ -71,7 +72,8 @@ def guardar_eventos(scrapers=None):
             #get_events_fiestasasturias_simcal,
             #get_events_camaragijon_recinto,
             #get_events_laboral_actividades,
-            get_events_asturiasconvivencias
+            #get_events_asturiasconvivencias,
+            get_events_umami_cursos
         ]
 
     nuevos = 0

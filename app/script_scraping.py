@@ -1315,6 +1315,99 @@ def get_events_asturiasconvivencias():
         return []
 
 
+# --------------------------
+# Scraping Umami Gijón (Cursos)
+# https://umamigijon.com/cursos/
+# --------------------------
+def get_events_umami_cursos():
+    from urllib.parse import urljoin, quote_plus
+    import re
+
+    base = "https://umamigijon.com"
+    url = f"{base}/cursos/"
+    events = []
+
+    def smart_parse_date(date_str, time_str=None):
+        """Parsea fecha (y hora si viene) detectando si el formato es MM/DD/YYYY o texto en español."""
+        if not date_str:
+            return None
+        s = date_str
+        if time_str and "todo el día" not in time_str.lower():
+            s = f"{date_str} {time_str}"
+        # Si viene como 08/13/2025 usar MDY; si no, DMY
+        if re.match(r"^\d{1,2}/\d{1,2}/\d{4}$", date_str.strip()):
+            return dateparser.parse(s, languages=["es"], settings={"DATE_ORDER": "MDY"})
+        else:
+            return dateparser.parse(s, languages=["es"], settings={"DATE_ORDER": "DMY"})
+
+    try:
+        res = requests.get(url, timeout=12)
+        if res.status_code != 200:
+            print(f"❌ Error al cargar la página: {res.status_code}")
+            return []
+
+        soup = BeautifulSoup(res.content, "html.parser")
+
+        items = soup.select("div.mep_event_list_sec .filter_item.mep-event-list-loop.mep_event_grid_item")
+        print(f"📦 Encontrados {len(items)} cursos (Umami)")
+
+        for idx, it in enumerate(items):
+            # Enlace al detalle ("Ver curso")
+            btn = it.select_one("a.plnb-book-now[href]")
+            link = urljoin(base, btn.get("href", "").strip()) if btn else ""
+
+            # Título
+            title_el = it.select_one("h2.mep_list_title")
+            title_text = title_el.get_text(strip=True) if title_el else it.get("data-title", "").strip() or "Sin título"
+            title = f"🍣 {title_text}"
+
+            # Ubicación (dirección completa en el listado)
+            loc_el = it.select_one("li.mep_list_location_name h5")
+            location = loc_el.get_text(strip=True) if loc_el else "Gijón"
+            lugar = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location)}", "{location}")'
+
+            # Fecha: preferir atributo data-date (MM/DD/YYYY); si no, fecha visible en el bloque de calendario
+            attr_date = it.get("data-date", "").strip()
+            visible_date_el = it.select_one("li.mep_list_event_date .evl-cc h5")
+            visible_date = visible_date_el.get_text(" ", strip=True) if visible_date_el else ""
+
+            # Hora: segundo <h5> dentro de .mep_list_event_date, si existe
+            time_candidates = it.select("li.mep_list_event_date .evl-cc h5")
+            hora_text = time_candidates[1].get_text(" ", strip=True) if len(time_candidates) > 1 else ""
+
+            # Parseo robusto de fecha (con hora si procede)
+            raw_date_for_parse = attr_date or visible_date
+            start_date = smart_parse_date(raw_date_for_parse, hora_text)
+            end_date = None  # en Umami suelen ser eventos de un solo día
+
+            # ✅ Deduplicación por enlace + fecha
+            if any(ev["link"] == link and ev["fecha"] == start_date for ev in events):
+                print(f"🔁 Duplicado saltado: {title_text}")
+                continue
+
+            # Disciplina (tu heurística)
+            disciplina = inferir_disciplina(title_text)
+
+            events.append({
+                "fuente": "UmamiGijon",
+                "evento": title,
+                "fecha": start_date,
+                "fecha_fin": end_date,
+                "hora": hora_text,
+                "lugar": lugar,
+                "link": link,
+                "disciplina": disciplina
+            })
+            print(f"✅ [{idx}] Añadido: {title_text}")
+
+        print(f"🎉 Total cursos Umami: {len(events)}")
+        return events
+
+    except Exception as e:
+        print(f"❌ Error en get_events_umami_cursos: {e}")
+        return []
+
+
 
 def inferir_disciplina(titulo):
     titulo = titulo.lower()
