@@ -40,7 +40,8 @@ def guardar_eventos(scrapers=None):
             get_events_turismoasturias,
             get_events_laboral,
             get_events_fiestasasturias_api,
-            get_events_fiestasasturias_simcal
+            get_events_fiestasasturias_simcal,
+            get_events_camaragijon_recinto
         )
 
         tematicas = [
@@ -55,17 +56,18 @@ def guardar_eventos(scrapers=None):
         ]
 
         scrapers = [
-            get_events_gijon,
-            get_events_oviedo,
-            get_events_mieres,
-            get_events_asturiescultura,
-            get_events_aviles,
-            get_events_siero,
-            get_events_conciertosclub,
-            lambda: get_events_turismoasturias(tematicas=tematicas),
-            get_events_laboral,
-            get_events_fiestasasturias_api,
-            get_events_fiestasasturias_simcal
+            #get_events_gijon,
+            #get_events_oviedo,
+            #get_events_mieres,
+            #get_events_asturiescultura,
+            #get_events_aviles,
+            #get_events_siero,
+            #get_events_conciertosclub,
+            #lambda: get_events_turismoasturias(tematicas=tematicas),
+            #get_events_laboral,
+            #get_events_fiestasasturias_api,
+            #get_events_fiestasasturias_simcal,
+            get_events_camaragijon_recinto
         ]
 
     nuevos = 0
