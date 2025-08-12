@@ -45,7 +45,8 @@ def guardar_eventos(scrapers=None):
             get_events_laboral_actividades,
             get_events_asturiasconvivencias,
             get_events_gijon_umami,
-            get_events_asturias
+            get_events_asturias,
+            get_events_jarascada
         )
 
         tematicas = [
@@ -75,7 +76,8 @@ def guardar_eventos(scrapers=None):
             #get_events_laboral_actividades,
             #get_events_asturiasconvivencias,
             #get_events_gijon_umami,
-            get_events_asturias
+            #get_events_asturias,
+            get_events_jarascada
         ]
 
     nuevos = 0

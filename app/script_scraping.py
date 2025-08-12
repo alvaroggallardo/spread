@@ -1556,7 +1556,89 @@ def get_events_asturias(max_days_ahead=90):
     print(f"🎉 Total eventos Asturias (Swing): {len(events)}")
     return events
 
+    
+    # --------------------------
+# Scraping Jarascada (ICS mensual)
+# --------------------------
+def get_events_jarascada(months_ahead=2):
+    """
+    Descarga el ICS mensual de Jarascada mes a mes (desde el mes actual),
+    lo parsea y devuelve eventos en la misma estructura que Mieres.
+    - months_ahead=2 -> mes actual + los 2 siguientes
+    """
+    base = "https://www.jarascada.es/feed/my-calendar-ics/"
+    events = []
+    seen = set()  # para deduplicar por (uid, link)
 
+    hoy = datetime.now().date()
+
+    def add_months(y, m, delta):
+        m2 = m + delta
+        y2 = y + (m2 - 1) // 12
+        m2 = ((m2 - 1) % 12) + 1
+        return y2, m2
+
+    y0, m0 = hoy.year, hoy.month
+
+    for i in range(months_ahead + 1):
+        y, m = add_months(y0, m0, i)
+        url = f"{base}?time=month&yr={y}&month={m}&dy=1"
+
+        try:
+            resp = requests.get(url, timeout=20)
+            resp.raise_for_status()
+        except Exception as e:
+            print(f"⚠️ Error descargando {url}: {e}")
+            continue
+
+        try:
+            cal = Calendar(resp.text)
+        except Exception as e:
+            print(f"⚠️ Error parseando ICS de {url}: {e}")
+            continue
+
+        for idx, ev in enumerate(cal.events):
+            title = ev.name or "Sin título"
+            link = ev.url if getattr(ev, "url", None) else "https://www.jarascada.es/eventos/"
+            uid = getattr(ev, "uid", None)
+
+            # ✅ Evitar duplicados por (uid, link)
+            key = (uid, link)
+            if key in seen:
+                # print(f"🔁 Duplicado saltado: {title}")
+                continue
+            seen.add(key)
+
+            lugar = ev.location or "Asturias"
+
+            start_dt = getattr(ev, "begin", None)
+            if start_dt is not None:
+                fecha_evento = start_dt.datetime  # tz-aware si viene con TZ
+                # Si es evento de día completo (VALUE=DATE) dejamos hora en blanco
+                is_all_day = bool(getattr(ev, "all_day", False))
+                hora_text = "" if is_all_day else fecha_evento.strftime("%H:%M")
+            else:
+                fecha_evento = None
+                hora_text = ""
+
+            disciplina = inferir_disciplina(title)
+
+            events.append({
+                "fuente": "Jarascada",
+                "evento": title,
+                "fecha": fecha_evento,
+                "hora": hora_text,
+                "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar)}", "{lugar}")',
+                "link": link,
+                "disciplina": disciplina
+            })
+
+            # print(f"✅ Jarascada: {title} -> {fecha_evento} {hora_text}")
+
+    print(f"🎉 Total eventos Jarascada: {len(events)}")
+    return events
+
+    
 def inferir_disciplina(titulo):
     titulo = titulo.lower()
 
