@@ -1560,17 +1560,33 @@ def get_events_asturias(max_days_ahead=90):
     # --------------------------
 # Scraping Jarascada (ICS mensual)
 # --------------------------
-def get_events_jarascada(months_ahead=2):
+# --------------------------
+# Scraping Jarascada (ICS mensual, con headers y fallback Selenium)
+# --------------------------
+def get_events_jarascada(months_ahead=2, only_future=True, offline_path=None):
     """
-    Descarga el ICS mensual de Jarascada mes a mes (desde el mes actual),
-    lo parsea y devuelve eventos en la misma estructura que Mieres.
-    - months_ahead=2 -> mes actual + los 2 siguientes
+    Mes actual + months_ahead. Devuelve misma estructura que Mieres.
+    Si el servidor devuelve 403, intenta Selenium.
+    Si no hay suerte, como último recurso puede leer un ICS local (offline_path).
     """
     base = "https://www.jarascada.es/feed/my-calendar-ics/"
     events = []
-    seen = set()  # para deduplicar por (uid, link)
-
+    seen = set()
     hoy = datetime.now().date()
+
+    # --- sesión HTTP con cabeceras "normales"
+    session = requests.Session()
+    UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+    session.headers.update({
+        "User-Agent": UA,
+        "Accept": "text/calendar,text/plain,*/*;q=0.8",
+        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+        "Referer": "https://www.jarascada.es/",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        # "DNT": "1",  # opcional
+    })
 
     def add_months(y, m, delta):
         m2 = m + delta
@@ -1578,48 +1594,28 @@ def get_events_jarascada(months_ahead=2):
         m2 = ((m2 - 1) % 12) + 1
         return y2, m2
 
-    y0, m0 = hoy.year, hoy.month
-
-    for i in range(months_ahead + 1):
-        y, m = add_months(y0, m0, i)
-        url = f"{base}?time=month&yr={y}&month={m}&dy=1"
-
-        try:
-            resp = requests.get(url, timeout=20)
-            resp.raise_for_status()
-        except Exception as e:
-            print(f"⚠️ Error descargando {url}: {e}")
-            continue
-
-        try:
-            cal = Calendar(resp.text)
-        except Exception as e:
-            print(f"⚠️ Error parseando ICS de {url}: {e}")
-            continue
-
-        for idx, ev in enumerate(cal.events):
+    def consume_calendar(cal):
+        nonlocal events, seen
+        for ev in cal.events:
             title = ev.name or "Sin título"
-            link = ev.url if getattr(ev, "url", None) else "https://www.jarascada.es/eventos/"
+            link = getattr(ev, "url", None) or "https://www.jarascada.es/eventos/"
             uid = getattr(ev, "uid", None)
-
-            # ✅ Evitar duplicados por (uid, link)
             key = (uid, link)
             if key in seen:
-                # print(f"🔁 Duplicado saltado: {title}")
                 continue
             seen.add(key)
 
             lugar = ev.location or "Asturias"
-
             start_dt = getattr(ev, "begin", None)
-            if start_dt is not None:
-                fecha_evento = start_dt.datetime  # tz-aware si viene con TZ
-                # Si es evento de día completo (VALUE=DATE) dejamos hora en blanco
-                is_all_day = bool(getattr(ev, "all_day", False))
-                hora_text = "" if is_all_day else fecha_evento.strftime("%H:%M")
+            if start_dt:
+                fecha_evento = start_dt.datetime
+                hora_text = "" if getattr(ev, "all_day", False) else fecha_evento.strftime("%H:%M")
             else:
                 fecha_evento = None
                 hora_text = ""
+
+            if only_future and fecha_evento and fecha_evento.date() < hoy:
+                continue
 
             disciplina = inferir_disciplina(title)
 
@@ -1633,10 +1629,66 @@ def get_events_jarascada(months_ahead=2):
                 "disciplina": disciplina
             })
 
-            # print(f"✅ Jarascada: {title} -> {fecha_evento} {hora_text}")
+    # --- bucle mes a mes
+    y0, m0 = hoy.year, hoy.month
+    for i in range(months_ahead + 1):
+        y, m = add_months(y0, m0, i)
+        url = f"{base}?time=month&yr={y}&month={m}&dy=1"
+
+        ics_text = None
+
+        # 1) Intento con requests + headers
+        for attempt in range(2):
+            try:
+                resp = session.get(url, timeout=25, allow_redirects=True)
+                if resp.status_code == 403:
+                    raise requests.HTTPError("403 Forbidden")
+                resp.raise_for_status()
+                enc = resp.encoding or "utf-8"
+                ics_text = resp.text if resp.text else resp.content.decode(enc, errors="ignore")
+                break
+            except Exception as e:
+                print(f"⚠️ Intento {attempt+1} falló en {url}: {e}")
+                time.sleep(1.2)
+
+        # 2) Fallback Selenium si seguimos sin texto
+        if ics_text is None:
+            try:
+                from selenium.webdriver.common.by import By  # import local para no romper tu entorno si no usas Selenium
+                driver = get_selenium_driver(headless=True)
+                driver.get(url)
+                time.sleep(2.5)
+                try:
+                    pre = driver.find_element(By.TAG_NAME, "pre")
+                    ics_text = pre.text
+                except Exception:
+                    # a veces Chrome no envuelve en <pre> y devuelve texto plano directamente
+                    ics_text = driver.page_source
+                driver.quit()
+            except Exception as e:
+                print(f"⚠️ Fallback Selenium falló para {url}: {e}")
+
+        # 3) Parsear ICS si lo tenemos
+        if ics_text:
+            try:
+                cal = Calendar(ics_text)
+                consume_calendar(cal)
+            except Exception as e:
+                print(f"⚠️ Error parseando ICS {y}-{m:02d}: {e}")
+
+    # 4) Último recurso: ICS local (para probar parser o “modo offline”)
+    if not events and offline_path:
+        try:
+            with open(offline_path, "r", encoding="utf-8") as f:
+                cal = Calendar(f.read())
+            consume_calendar(cal)
+            print(f"🗂️ Cargados {len(events)} eventos desde offline_path")
+        except Exception as e:
+            print(f"⚠️ Error leyendo offline_path: {e}")
 
     print(f"🎉 Total eventos Jarascada: {len(events)}")
     return events
+
 
     
 def inferir_disciplina(titulo):
