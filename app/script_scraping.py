@@ -1692,7 +1692,6 @@ def get_events_jarascada(months_ahead=2, only_future=True, offline_path=None):
 # Scraping Agenda Gijón (EventON) - 7 días vista
 # --------------------------
 def get_events_agenda_gijon(days_ahead=7):
-    # TZ Madrid
     try:
         TZI = ZoneInfo("Europe/Madrid")
     except Exception:
@@ -1753,7 +1752,7 @@ def get_events_agenda_gijon(days_ahead=7):
             if not eid:
                 continue
 
-            # URL
+            # URL desde JSON-LD o <a>
             found = None
             for s in box.select('script[type="application/ld+json"]'):
                 try:
@@ -1905,17 +1904,17 @@ def get_events_agenda_gijon(days_ahead=7):
         driver = get_selenium_driver(headless=True)
         try:
             driver.get(BASE)
-            # aceptar cookies
+
+            # aceptar cookies si sale
             try:
                 WebDriverWait(driver, 5).until(
                     EC.element_to_be_clickable((By.ID, "cn-accept-cookie"))
                 ).click()
-                time.sleep(0.4)
+                time.sleep(0.3)
             except Exception:
                 pass
 
             def _get_day_meta():
-                """Devuelve (y, m, d) leídos de .evo_cal_data[data-sc] como enteros o (None,..)."""
                 try:
                     el = driver.find_element(By.CSS_SELECTOR, ".evo_cal_data")
                     sc_json = el.get_attribute("data-sc") or "{}"
@@ -1926,6 +1925,23 @@ def get_events_agenda_gijon(days_ahead=7):
                     return (y, m, d)
                 except Exception:
                     return (None, None, None)
+
+            def _state_signature():
+                """Firma robusta del día: (year,month,day, hash_html, first_event_id or '-')"""
+                import hashlib
+                y, m, d = _get_day_meta()
+                try:
+                    list_el = driver.find_element(By.ID, "evcal_list")
+                    inner = list_el.get_attribute("innerHTML") or ""
+                except Exception:
+                    inner = ""
+                h = hashlib.sha1((inner or "").encode("utf-8","ignore")).hexdigest()[:10]
+                first_id = "-"
+                try:
+                    first_id = driver.find_element(By.CSS_SELECTOR, "#evcal_list .eventon_list_event").get_attribute("data-event_id") or "-"
+                except Exception:
+                    pass
+                return (y, m, d, h, first_id)
 
             def _collect_from_dom():
                 page = BeautifulSoup(driver.page_source, "html.parser")
@@ -1974,7 +1990,7 @@ def get_events_agenda_gijon(days_ahead=7):
                         full_loc = box.select_one(".evoet_location")
                         location_text = (full_loc.get_text(" ", strip=True) if full_loc else "") or name or "Gijón"
 
-                    # Hora y fecha final
+                    # Hora/fecha
                     if dt:
                         dt_local = dt.astimezone(TZI) if TZI else dt
                         hora = dt_local.strftime("%H:%M")
@@ -1997,7 +2013,7 @@ def get_events_agenda_gijon(days_ahead=7):
                     except Exception:
                         disciplina = ""
 
-                    if link and any(ev["link"] == link for ev in events): 
+                    if link and any(ev["link"] == link for ev in events):
                         continue
 
                     day_events.append({
@@ -2011,59 +2027,63 @@ def get_events_agenda_gijon(days_ahead=7):
                     })
                 return day_events
 
-            # Loop días
-            today = datetime.now(TZI).date() if TZI else datetime.now().date()
+            # Recorre hoy + N-1 días
             for step in range(int(days_ahead)):
-                # 1) Recolecta día actual
+                # 1) Recolecta el día actual
                 events.extend(_collect_from_dom())
 
                 # 2) Avanza si quedan días
                 if step < int(days_ahead) - 1:
-                    target = today + timedelta(days=step + 1)
-                    target_tuple = (target.year, target.month, target.day)
+                    before = _state_signature()
 
-                    # Snapshot del HTML por si el meta no se actualiza
-                    try:
-                        list_el = WebDriverWait(driver, 10).until(
-                            EC.presence_of_element_located((By.ID, "evcal_list"))
-                        )
-                        old_html = list_el.get_attribute("innerHTML")
-                    except Exception:
-                        old_html = None
-
-                    # Click siguiente (JS para evitar overlays)
-                    try:
-                        nxt = WebDriverWait(driver, 10).until(
-                            EC.element_to_be_clickable((By.ID, "evcal_next"))
-                        )
-                        driver.execute_script("arguments[0].click();", nxt)
-                    except Exception:
-                        # último recurso
+                    # Clic en "siguiente" con retries
+                    clicked = False
+                    for _try in range(3):
                         try:
-                            driver.find_element(By.ID, "evcal_next").click()
-                        except Exception:
-                            time.sleep(1.0)
-
-                    # Espera principal: cambia meta del día a la fecha objetivo
-                    ok = False
-                    try:
-                        WebDriverWait(driver, 12).until(
-                            lambda d: _get_day_meta() == target_tuple
-                        )
-                        ok = True
-                    except Exception:
-                        ok = False
-
-                    # Espera secundaria: cambia HTML del listado
-                    if not ok and old_html is not None:
-                        try:
-                            WebDriverWait(driver, 12).until(
-                                lambda d: d.find_element(By.ID, "evcal_list").get_attribute("innerHTML") != old_html
+                            nxt = WebDriverWait(driver, 10).until(
+                                EC.presence_of_element_located((By.ID, "evcal_next"))
                             )
+                            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", nxt)
+                            time.sleep(0.15)
+                            # estrategia 1: click normal si clickable
+                            try:
+                                WebDriverWait(driver, 3).until(EC.element_to_be_clickable((By.ID, "evcal_next")))
+                                nxt.click()
+                            except Exception:
+                                # estrategia 2: JS click
+                                try:
+                                    driver.execute_script("arguments[0].click();", nxt)
+                                except Exception:
+                                    # estrategia 3: dispatch events
+                                    driver.execute_script("""
+                                        var el=arguments[0];
+                                        el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
+                                        el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
+                                        el.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+                                    """, nxt)
+                            clicked = True
+                            break
                         except Exception:
-                            pass
+                            time.sleep(0.4)
 
-                    time.sleep(0.6)  # pequeña pausa para que termine de hidratar
+                    if not clicked:
+                        print("⚠️ No se pudo clicar 'siguiente'"); 
+                        continue
+
+                    # Espera a que cambie la firma del día
+                    changed = False
+                    try:
+                        WebDriverWait(driver, 12).until(lambda d: _state_signature() != before)
+                        changed = True
+                    except Exception:
+                        # Último recurso: pequeña espera
+                        time.sleep(1.2)
+
+                    if not changed:
+                        print("⚠️ La vista no cambió tras 'siguiente'")
+
+                    # pequeña pausa para que termine de hidratar
+                    time.sleep(0.5)
 
         finally:
             try:
@@ -2082,6 +2102,7 @@ def get_events_agenda_gijon(days_ahead=7):
 
     print(f"🎉 Total eventos Agenda Gijón: {len(uniq)}")
     return uniq
+
     
 def inferir_disciplina(titulo):
     titulo = titulo.lower()
