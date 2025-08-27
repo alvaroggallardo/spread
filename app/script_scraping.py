@@ -1689,7 +1689,7 @@ def get_events_jarascada(months_ahead=2, only_future=True, offline_path=None):
     return events
 
 # --------------------------
-# Scraping Agenda Gijón (EventON) - 7 días vista (sin clics en Selenium)
+# Scraping Agenda Gijón (EventON) - 7 días vista (REST + admin-ajax en contexto navegador)
 # --------------------------
 def get_events_agenda_gijon(days_ahead=7):
     BASE = "https://agendagijon.com"
@@ -1728,7 +1728,6 @@ def get_events_agenda_gijon(days_ahead=7):
                 sc = json.loads(cal_data["data-sc"])
             except Exception:
                 sc = {}
-        # mínimos por si acaso
         if not sc:
             sc = {
                 "calendar_type": "daily",
@@ -1744,7 +1743,6 @@ def get_events_agenda_gijon(days_ahead=7):
         return postnonce, sc
 
     def _parse_day_html(day_html: str):
-        """Del HTML embebido en la respuesta saco url/ubicación por ID de evento."""
         urls, locs = {}, {}
         soup = BeautifulSoup(day_html or "", "html.parser")
         for box in soup.select("div.eventon_list_event"):
@@ -1755,22 +1753,19 @@ def get_events_agenda_gijon(days_ahead=7):
                 eid = m.group(1) if m else None
             if not eid:
                 continue
-            # URL (prefiere JSON-LD)
+            # URL prioriza JSON-LD
             found = None
             for s in box.select('script[type="application/ld+json"]'):
                 try:
                     j = json.loads(s.string or "{}")
                     if isinstance(j, dict) and j.get("url"):
-                        found = j["url"]
-                        break
+                        found = j["url"]; break
                 except Exception:
                     pass
             if not found:
                 a = box.select_one("a[href]")
-                if a:
-                    found = a.get("href")
-            if found:
-                urls[str(eid)] = found
+                if a: found = a.get("href")
+            if found: urls[str(eid)] = found
 
             # Localización
             attrs = box.select_one(".event_location_attrs")
@@ -1818,7 +1813,7 @@ def get_events_agenda_gijon(days_ahead=7):
             "disciplina": disciplina
         }
 
-    # ---------- 1) Intento admin-ajax directo ----------
+    # ---------- 1) Intento admin-ajax directo (desde servidor) ----------
     events = []
     sess = requests.Session()
     sess.headers.update({
@@ -1890,21 +1885,18 @@ def get_events_agenda_gijon(days_ahead=7):
 
                 for it in items:
                     ev = _build_event(it, urls_by_id, locs_by_id)
-                    if ev:
-                        # dedupe por link
-                        if any(e["link"] == ev["link"] for e in events):
-                            continue
+                    if ev and not any(e["link"] == ev["link"] for e in events):
                         events.append(ev)
     except Exception as e:
         print(f"❌ Error inicial (nonce/sc): {e}")
 
-    # ---------- 2) Fallback Selenium: fetch en contexto de la página (sin clics) ----------
+    # ---------- 2) Fallback Selenium: REST con X-WP-Nonce; si falla, admin-ajax en página ----------
     if not events:
         print("ℹ️ Fallback Selenium (admin-ajax bloqueado o devolviendo '0').")
         driver = get_selenium_driver(headless=True)
         try:
             driver.get(BASE)
-            # Aceptar cookies si aparece
+            # acepta cookies
             try:
                 WebDriverWait(driver, 5).until(
                     EC.element_to_be_clickable((By.ID, "cn-accept-cookie"))
@@ -1913,8 +1905,18 @@ def get_events_agenda_gijon(days_ahead=7):
             except Exception:
                 pass
 
-            # Extraer nonce y sc desde el DOM inicial
-            postnonce, sc_tpl = _extract_nonce_and_sc(driver.page_source)
+            # Capturamos nonces/SC desde el DOM
+            page_html = driver.page_source
+            postnonce, sc_tpl = _extract_nonce_and_sc(page_html)
+
+            # nonce REST de EventON (mismo valor que vimos en la página)
+            evo_nonce = None
+            try:
+                evo_nonce = driver.execute_script("return (window.evo_general_params && window.evo_general_params.n) || null;")
+            except Exception:
+                evo_nonce = None
+            if not evo_nonce:
+                evo_nonce = postnonce  # por si coincide
 
             today = datetime.now(TZI).date() if TZI else datetime.now().date()
             for i in range(int(days_ahead)):
@@ -1931,16 +1933,18 @@ def get_events_agenda_gijon(days_ahead=7):
                     "focus_end_date_range": str(eu),
                 })
 
-                js = """
+                # 2A) REST con X-WP-Nonce
+                js_rest = """
                 const done = arguments[0];
                 (async function(){
                   try{
-                    const params = window.evo_general_params || {};
-                    const restBase = (params.rest_url || '').replace('%%endpoint%%','dv_newday') || '/wp-json/eventon/v1/data?evo-ajax=dv_newday';
-                    const nonce = (params.n || %r);
-                    const postnonce = %r;
+                    const gp = window.evo_general_params || {};
+                    const restBase = (gp.rest_url || '').replace('%%endpoint%%','dv_newday') || '/wp-json/eventon/v1/data?evo-ajax=dv_newday';
+                    const nonce = %s;
+                    const postnonce = %s;
                     const sc = %s;
                     const body = new URLSearchParams();
+                    // Aunque sea REST, este endpoint acepta form-urlencoded
                     body.set('action','the_ajax_ev_cal');
                     body.set('ajaxtype','dv_newday');
                     body.set('direction','none');
@@ -1949,7 +1953,11 @@ def get_events_agenda_gijon(days_ahead=7):
                     for (const [k,v] of Object.entries(sc)) body.set('shortcode['+k+']', String(v));
                     const res = await fetch(restBase, {
                       method: 'POST',
-                      headers: {'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'},
+                      headers: {
+                        'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8',
+                        'X-WP-Nonce': nonce,
+                        'X-Requested-With': 'XMLHttpRequest'
+                      },
                       body
                     });
                     const text = await res.text();
@@ -1958,25 +1966,58 @@ def get_events_agenda_gijon(days_ahead=7):
                     done(JSON.stringify({status:'ERR', error: String(e)}));
                   }
                 })();
-                """ % (json.dumps(postnonce), json.dumps(postnonce), json.dumps(sc))
+                """ % (json.dumps(evo_nonce), json.dumps(postnonce), json.dumps(sc))
 
-                txt = driver.execute_async_script(js) or ""
-                txt = txt.strip()
+                txt = (driver.execute_async_script(js_rest) or "").strip()
 
-                # Puede venir en texto plano JSON
-                try:
-                    data = json.loads(txt)
-                except Exception:
-                    # a veces el fetch ya devuelve objeto; volvemos a ejecutar para forzar JSON si hiciera falta
+                def _try_parse(s):
                     try:
-                        data = driver.execute_async_script(
-                            "const d=arguments[0]; try{d(JSON.parse(%s))}catch(e){d({status:'ERR',error:'nojson'})}" % json.dumps(txt)
-                        )
+                        return json.loads(s)
                     except Exception:
-                        data = None
+                        return None
+
+                data = _try_parse(txt)
+
+                # 2B) Si REST no devuelve OK, probamos admin-ajax desde la propia página
+                if not isinstance(data, dict) or data.get("status") not in ("GOOD", "OK"):
+                    js_ajax = """
+                    const done = arguments[0];
+                    (async function(){
+                      try{
+                        const ta = window.the_ajax_script || {};
+                        const ajaxurl = ta.ajaxurl || '/wp-admin/admin-ajax.php';
+                        const postnonce = %s;
+                        const sc = %s;
+                        const body = new URLSearchParams();
+                        body.set('action','the_ajax_ev_cal');
+                        body.set('ajaxtype','dv_newday');
+                        body.set('direction','none');
+                        body.set('nonce', postnonce);
+                        body.set('postnonce', postnonce);
+                        for (const [k,v] of Object.entries(sc)) body.set('shortcode['+k+']', String(v));
+                        const res = await fetch(ajaxurl, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8',
+                            'X-Requested-With': 'XMLHttpRequest'
+                          },
+                          body
+                        });
+                        const text = await res.text();
+                        done(text);
+                      }catch(e){
+                        done(JSON.stringify({status:'ERR', error: String(e)}));
+                      }
+                    })();
+                    """ % (json.dumps(postnonce), json.dumps(sc))
+
+                    txt = (driver.execute_async_script(js_ajax) or "").strip()
+                    data = _try_parse(txt)
 
                 if not isinstance(data, dict) or data.get("status") not in ("GOOD", "OK"):
-                    print(f"⚠️ {day.date()} respuesta inesperada Selenium: {str(data)[:160] if data else 'None'}")
+                    # log corto para depurar si sigue fallando
+                    short = (txt[:120] + '...') if isinstance(txt, str) else str(data)[:120]
+                    print(f"⚠️ {day.date()} respuesta inesperada Selenium: {short}")
                     continue
 
                 items = data.get("json", []) or []
@@ -1985,9 +2026,7 @@ def get_events_agenda_gijon(days_ahead=7):
 
                 for it in items:
                     ev = _build_event(it, urls_by_id, locs_by_id)
-                    if ev:
-                        if any(e["link"] == ev["link"] for e in events):
-                            continue
+                    if ev and not any(e["link"] == ev["link"] for e in events):
                         events.append(ev)
         finally:
             try:
@@ -1996,17 +2035,17 @@ def get_events_agenda_gijon(days_ahead=7):
                 pass
 
     # ---------- dedupe final ----------
-    uniq = []
-    seen = set()
+    uniq, seen = [], set()
     for ev in events:
         k = ev.get("link") or (ev.get("evento"), ev.get("fecha"))
-        if k in seen:
+        if k in seen: 
             continue
         seen.add(k)
         uniq.append(ev)
 
     print(f"🎉 Total eventos Agenda Gijón: {len(uniq)}")
     return uniq
+
 
     
 def inferir_disciplina(titulo):
