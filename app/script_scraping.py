@@ -1699,7 +1699,7 @@ def get_events_jarascada(months_ahead=2, only_future=True, offline_path=None):
 # --------------------------
 def get_events_agenda_gijon(days_ahead=7):
 
-    # --- TZ Europe/Madrid ---
+    # TZ Madrid
     try:
         from zoneinfo import ZoneInfo
         TZI = ZoneInfo("Europe/Madrid")
@@ -1710,134 +1710,28 @@ def get_events_agenda_gijon(days_ahead=7):
     BASE = "https://agendagijon.com"
     AJAX = f"{BASE}/wp-admin/admin-ajax.php"
 
-    # ---------- helpers ----------
-    def _extract_ajax_and_rest(html: str):
-        """
-        Devuelve (postnonce, evo_nonce, rest_url_template)
-        """
+    def _extract_postnonce_and_sc(html: str):
         postnonce = ""
-        evo_nonce = ""
-        rest_url = ""
-
-        # Bloque JS con the_ajax_script / evo_general_params
-        m1 = re.search(r"var the_ajax_script\s*=\s*(\{.*?\});", html, re.S)
-        if m1:
+        sc = {}
+        # the_ajax_script -> postnonce
+        m = re.search(r"var the_ajax_script\s*=\s*(\{.*?\});", html, re.S)
+        if m:
             try:
-                d = json.loads(m1.group(1))
-                postnonce = d.get("postnonce") or postnonce
+                d = json.loads(m.group(1))
+                postnonce = d.get("postnonce") or ""
             except Exception:
                 pass
-
-        m2 = re.search(r"var evo_general_params\s*=\s*(\{.*?\});", html, re.S)
-        if m2:
-            try:
-                d = json.loads(m2.group(1))
-                evo_nonce = d.get("n") or evo_nonce
-                rest_url = d.get("rest_url") or rest_url  # ej: https://..../eventon/v1/data?evo-ajax=%%endpoint%%
-            except Exception:
-                pass
-
-        # Fallback: buscar "postnonce":"..."
-        if not postnonce:
-            m3 = re.search(r'"postnonce"\s*:\s*"([a-f0-9]{8,32})"', html, re.I)
-            if m3: postnonce = m3.group(1)
-        # Fallback: buscar '"n":"...'
-        if not evo_nonce:
-            m4 = re.search(r'["\']n["\']\s*:\s*["\']([a-f0-9]{8,32})["\']', html, re.I)
-            if m4: evo_nonce = m4.group(1)
-
-        return postnonce, evo_nonce, rest_url
-
-    def _extract_sc_template(html: str) -> dict:
+        # data-sc del calendario (plantilla de shortcode)
         soup = BeautifulSoup(html, "html.parser")
         cal_data = soup.select_one(".evo_cal_data")
-        if not cal_data or not cal_data.has_attr("data-sc"):
-            return {}
-        try:
-            return json.loads(cal_data["data-sc"])
-        except Exception:
-            return {}
-
-    def _onedayplus_bounds(d: datetime) -> tuple[int, int]:
-        # 10:00 del día anterior -> 09:59:59 del día d (como en el debug del JSON)
-        start = (datetime(d.year, d.month, d.day, 10, 0, 0, tzinfo=TZI) - timedelta(days=1))
-        end = datetime(d.year, d.month, d.day, 9, 59, 59, tzinfo=TZI)
-        return int(start.timestamp()), int(end.timestamp())
-
-    def _list1(v):
-        return v[0] if isinstance(v, list) and v else v
-
-    def _parse_locations_by_event_id(day_html: str) -> dict:
-        locs = {}
-        soup = BeautifulSoup(day_html or "", "html.parser")
-        for box in soup.select("div.eventon_list_event"):
-            eid = box.get("data-event_id")
-            if not eid:
-                bid = box.get("id", "")
-                m = re.search(r"event_(\d+)_", bid)
-                eid = m.group(1) if m else None
-            if not eid:
-                continue
-            attrs = box.select_one(".event_location_attrs")
-            if attrs:
-                name = attrs.get("data-location_name") or ""
-                addr = attrs.get("data-location_address") or ""
-                txt = f"{name}, {addr}".strip().strip(", ")
-            else:
-                name_el = box.select_one(".event_location_name")
-                name = name_el.get_text(" ", strip=True) if name_el else ""
-                full_loc = box.select_one(".evoet_location")
-                if full_loc:
-                    txt = full_loc.get_text(" ", strip=True) or name
-                else:
-                    txt = name or "Gijón"
-            locs[str(eid)] = txt or "Gijón"
-        return locs
-
-    def _fallback_event_url_from_html(day_html: str, event_id: int | str) -> str | None:
-        soup = BeautifulSoup(day_html or "", "html.parser")
-        box = soup.select_one(f"#event_{event_id}_0") or soup.select_one(f".event_{event_id}_0")
-        if not box:
-            return None
-        for s in box.select('script[type="application/ld+json"]'):
+        if cal_data and cal_data.has_attr("data-sc"):
             try:
-                j = json.loads(s.string or "{}")
-                if isinstance(j, dict) and j.get("url"):
-                    return j["url"]
+                sc = json.loads(cal_data["data-sc"])
             except Exception:
-                pass
-        a = box.select_one("a[href]")
-        return a.get("href") if a else None
-
-    # ---------- sesión HTTP ----------
-    sess = requests.Session()
-    sess.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        "Accept": "application/json, text/javascript, */*; q=0.01",
-        "Accept-Language": "es-ES,es;q=0.9",
-        "Referer": BASE + "/",
-        "Origin": BASE,
-        "X-Requested-With": "XMLHttpRequest",
-        # requests pondrá application/x-www-form-urlencoded en POST automáticamente
-    })
-    # Evitar bloqueos tontos por el banner de cookies
-    try:
-        sess.cookies.set("cookie_notice_accepted", "true", domain="agendagijon.com", path="/")
-    except Exception:
-        pass
-
-    events = []
-
-    try:
-        # 1) HTML inicial: nonces + SC + REST URL
-        home = sess.get(BASE, timeout=25)
-        home.raise_for_status()
-        home_html = home.text
-
-        postnonce, evo_nonce, rest_url_tpl = _extract_ajax_and_rest(home_html)
-        sc_tpl = _extract_sc_template(home_html)
-        if not sc_tpl:
-            sc_tpl = {
+                sc = {}
+        # mínimos por si no vinieran
+        if not sc:
+            sc = {
                 "calendar_type": "daily",
                 "dv_view_style": "onedayplus",
                 "event_status": "all",
@@ -1848,20 +1742,83 @@ def get_events_agenda_gijon(days_ahead=7):
                 "lang": "L1",
                 "_cver": "4.5.9",
             }
+        return postnonce, sc
 
-        def _post_admin_ajax(payload):
-            r = sess.post(AJAX, data=payload, timeout=30)
-            return r
+    def _onedayplus_bounds(d: datetime) -> tuple[int, int]:
+        # ventana onedayplus: 10:00 del día anterior -> 09:59:59 del día d
+        start = (datetime(d.year, d.month, d.day, 10, 0, 0, tzinfo=TZI) - timedelta(days=1))
+        end = datetime(d.year, d.month, d.day, 9, 59, 59, tzinfo=TZI)
+        return int(start.timestamp()), int(end.timestamp())
 
-        def _post_rest(payload, nonce_for_rest):
-            # rest_url_tpl viene como ".../eventon/v1/data?evo-ajax=%%endpoint%%"
-            rest_url = (rest_url_tpl or f"{BASE}/wp-json/eventon/v1/data?evo-ajax=%%endpoint%%").replace("%%endpoint%%", "dv_newday")
-            # En REST suele validar nonce vía _wpnonce (query) o cabecera X-WP-Nonce
-            headers = {"X-WP-Nonce": nonce_for_rest}
-            r = sess.post(f"{rest_url}&_wpnonce={nonce_for_rest}", data=payload, headers=headers, timeout=30)
-            return r
+    def _parse_day_html(day_html: str):
+        """Devuelve dicts (event_id -> url, event_id -> location) usando el HTML recibido."""
+        urls, locs = {}, {}
+        soup = BeautifulSoup(day_html or "", "html.parser")
+        for box in soup.select("div.eventon_list_event"):
+            eid = box.get("data-event_id")
+            if not eid:
+                bid = box.get("id", "")
+                m = re.search(r"event_(\d+)_", bid)
+                eid = m.group(1) if m else None
+            if not eid:
+                continue
 
-        # 2) Loop de días
+            # URL (schema.org JSON o primer <a>)
+            found = None
+            for s in box.select('script[type="application/ld+json"]'):
+                try:
+                    j = json.loads(s.string or "{}")
+                    if isinstance(j, dict) and j.get("url"):
+                        found = j["url"]
+                        break
+                except Exception:
+                    pass
+            if not found:
+                a = box.select_one("a[href]")
+                if a:
+                    found = a.get("href")
+            if found:
+                urls[str(eid)] = found
+
+            # Localización
+            attrs = box.select_one(".event_location_attrs")
+            if attrs:
+                name = attrs.get("data-location_name") or ""
+                addr = attrs.get("data-location_address") or ""
+                loc_txt = f"{name}, {addr}".strip().strip(", ")
+            else:
+                name_el = box.select_one(".event_location_name")
+                name = name_el.get_text(" ", strip=True) if name_el else ""
+                full_loc = box.select_one(".evoet_location")
+                loc_txt = (full_loc.get_text(" ", strip=True) if full_loc else "") or name or "Gijón"
+            locs[str(eid)] = loc_txt or "Gijón"
+
+        return urls, locs
+
+    sess = requests.Session()
+    sess.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "es-ES,es;q=0.9",
+        "Referer": BASE + "/",
+        "Origin": BASE,
+        "X-Requested-With": "XMLHttpRequest",
+        "Cache-Control": "no-cache",
+    })
+    try:
+        # Evita banner cookies
+        sess.cookies.set("cookie_notice_accepted", "true", domain="agendagijon.com", path="/")
+    except Exception:
+        pass
+
+    events = []
+
+    try:
+        # HTML inicial para nonce + shortcode base
+        r0 = sess.get(BASE, timeout=25)
+        r0.raise_for_status()
+        postnonce, sc_tpl = _extract_postnonce_and_sc(r0.text)
+
         today = datetime.now(tz=TZI).date()
         for i in range(int(days_ahead)):
             day = datetime(today.year, today.month, today.day, tzinfo=TZI) + timedelta(days=i)
@@ -1881,49 +1838,31 @@ def get_events_agenda_gijon(days_ahead=7):
                 "action": "the_ajax_ev_cal",
                 "ajaxtype": "dv_newday",
                 "direction": "none",
-                "nonce": postnonce or evo_nonce,  # primero postnonce
+                "postnonce": postnonce,   # <- IMPORTANTE: postnonce, no "nonce"
             }
             payload.update({f"shortcode[{k}]": v for k, v in sc.items()})
 
-            # --- 1º intento: admin-ajax con postnonce ---
-            r = _post_admin_ajax(payload)
+            r = sess.post(AJAX, data=payload, timeout=30)
             if r.status_code == 400:
-                # refrescamos nonces una vez
-                try:
-                    home2 = sess.get(BASE, timeout=25)
-                    home2.raise_for_status()
-                    postnonce2, evo_nonce2, rest_url_tpl2 = _extract_ajax_and_rest(home2.text)
-                    if postnonce2 and postnonce2 != postnonce:
-                        postnonce = postnonce2
-                    if evo_nonce2:
-                        evo_nonce = evo_nonce2
-                    if rest_url_tpl2:
-                        rest_url_tpl = rest_url_tpl2
-                except Exception:
-                    pass
-                payload["nonce"] = postnonce or evo_nonce
-                r = _post_admin_ajax(payload)
+                # nonce puede haber caducado: refrescamos una vez por día
+                r1 = sess.get(BASE, timeout=25)
+                if r1.ok:
+                    postnonce, _ = _extract_postnonce_and_sc(r1.text)
+                    payload["postnonce"] = postnonce
+                    r = sess.post(AJAX, data=payload, timeout=30)
 
-            # --- Si sigue sin valer, intentamos REST fallback ---
-            if r.status_code == 400 or r.status_code == 403:
-                r = _post_rest({k: v for k, v in payload.items() if not k.startswith("action") and k != "nonce"},
-                               evo_nonce or postnonce)
-
-            # Si aún así falla: log útil y saltamos día
             if r.status_code >= 400:
                 print(f"⚠️ Gijón {day.date()} HTTP {r.status_code} -> {r.text[:180]}")
                 continue
 
-            # Parse JSON
             try:
                 data = r.json()
             except Exception:
-                # a veces REST devuelve JSON como texto con BOM/u otros
+                data = {}
                 try:
                     data = json.loads(r.text)
-                except Exception as e:
-                    print(f"⚠️ Gijón {day.date()} respuesta no JSON: {e} :: {r.text[:160]}")
-                    continue
+                except Exception:
+                    pass
 
             if not isinstance(data, dict) or data.get("status") not in ("GOOD", "OK"):
                 print(f"⚠️ {day.date()} respuesta inesperada: {str(data)[:160]}")
@@ -1931,7 +1870,7 @@ def get_events_agenda_gijon(days_ahead=7):
 
             items = data.get("json", []) or []
             day_html = data.get("html", "") or ""
-            loc_by_id = _parse_locations_by_event_id(day_html)
+            urls_by_id, locs_by_id = _parse_day_html(day_html)
 
             for it in items:
                 try:
@@ -1942,17 +1881,17 @@ def get_events_agenda_gijon(days_ahead=7):
                     if not ts:
                         continue
                     ts = int(ts)
-                    fecha_evento = datetime.fromtimestamp(ts, tz=TZI)
-                    hora_text = fecha_evento.strftime("%H:%M")
+                    dt = datetime.fromtimestamp(ts, tz=TZI)
+                    hora = dt.strftime("%H:%M")
 
-                    evpmv = it.get("event_pmv", {}) or {}
-                    exlink = _list1(evpmv.get("evcal_exlink"))
-                    if isinstance(exlink, str) and exlink.strip():
-                        link = exlink.strip()
-                    else:
-                        link = _fallback_event_url_from_html(day_html, eid) or BASE + "/"
+                    # link: primero exlink, si no, el del HTML
+                    pmv = it.get("event_pmv", {}) or {}
+                    exlink = pmv.get("evcal_exlink")
+                    if isinstance(exlink, list) and exlink:
+                        exlink = exlink[0]
+                    link = (exlink or "").strip() or urls_by_id.get(eid) or BASE + "/"
 
-                    location_text = loc_by_id.get(eid) or "Gijón"
+                    location_text = locs_by_id.get(eid) or "Gijón"
 
                     try:
                         disciplina = inferir_disciplina(title)
@@ -1960,20 +1899,19 @@ def get_events_agenda_gijon(days_ahead=7):
                         disciplina = ""
 
                     if link and any(ev["link"] == link for ev in events):
-                        # Evita duplicados como en tus otras funciones
                         continue
 
+                    from urllib.parse import quote
                     events.append({
                         "fuente": "AgendaGijon",
                         "evento": title,
-                        "fecha": fecha_evento,
-                        "hora": hora_text,
-                        "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={requests.utils.quote(location_text)}", "{location_text}")',
+                        "fecha": dt,
+                        "hora": hora,
+                        "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote(location_text)}", "{location_text}")',
                         "link": link,
                         "disciplina": disciplina
                     })
-
-                    print(f"✅ [Gijón] {title} -> {fecha_evento} {hora_text}")
+                    print(f"✅ [Gijón] {title} -> {dt} {hora}")
                 except Exception as e:
                     print(f"⚠️ Error parseando evento: {e}")
 
