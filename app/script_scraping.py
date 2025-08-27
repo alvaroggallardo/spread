@@ -1690,6 +1690,165 @@ def get_events_jarascada(months_ahead=2, only_future=True, offline_path=None):
     return events
 
 
+# --------------------------
+# Scraping Agenda Gijón (AJAX diario) -> MISMA ESTRUCTURA (events: list[dict])
+# --------------------------
+def get_events_agenda_gijon(days=7, start_date=None, nonce=None):
+
+    BASE = "https://agendagijon.com"
+    AJAX = f"{BASE}/wp-admin/admin-ajax.php"
+
+    # --- Sesión HTTP con cabeceras "normales"
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        "Referer": f"{BASE}/",
+        "Origin": BASE,
+        "X-Requested-With": "XMLHttpRequest",
+    })
+
+    # --- Descubrir nonce desde la home si no lo pasamos
+    if not nonce:
+        try:
+            r = s.get(f"{BASE}/", timeout=20)
+            r.raise_for_status()
+            # Varias heurísticas: "nonce":"xxxxx", nonce='xxxxx', data-nonce="xxxxx"
+            m = re.search(r'nonce[\'"\s:=-]*[\'"]([a-f0-9]{8,})[\'"]', r.text, re.I)
+            if not m:
+                m = re.search(r'data-nonce=[\'"]([a-f0-9]{8,})[\'"]', r.text, re.I)
+            if m:
+                nonce = m.group(1)
+            else:
+                print("⚠️ No se pudo extraer nonce de la home.")
+                return []
+        except Exception as e:
+            print(f"⚠️ Error obteniendo nonce: {e}")
+            return []
+
+    # --- Ventana 'diaria' como hace el plugin: 10:00 del día anterior → 09:59:59 del día D
+    def _day_unix_window(d):
+        try:
+            from zoneinfo import ZoneInfo  # stdlib 3.9+
+            tz = ZoneInfo("Europe/Madrid")
+            start = datetime(d.year, d.month, d.day, 10, 0, 0, tzinfo=tz) - timedelta(days=1)
+            end   = datetime(d.year, d.month, d.day, 9, 59, 59, tzinfo=tz)
+        except Exception:
+            # Fallback si no hay zoneinfo: depende del TZ del servidor
+            start = datetime(d.year, d.month, d.day, 10, 0, 0) - timedelta(days=1)
+            end   = datetime(d.year, d.month, d.day, 9, 59, 59)
+        return int(start.timestamp()), int(end.timestamp())
+
+    # --- POST para un día concreto (emulando los campos "shortcode[...]")
+    def _fetch_day_payload(d):
+        su, eu = _day_unix_window(d)
+        data = {
+            "ajaxtype": "dv_newday",
+            "nonce": nonce,
+
+            # parámetros del shortcode (mínimos para que responda igual que la vista 'daily')
+            "shortcode[calendar_type]": "daily",
+            "shortcode[dv_view_style]": "onedayplus",
+            "shortcode[fixed_day]": str(d.day),
+            "shortcode[fixed_month]": str(d.month),
+            "shortcode[fixed_year]": str(d.year),
+            "shortcode[focus_start_date_range]": str(su),
+            "shortcode[focus_end_date_range]": str(eu),
+
+            # algunos defaults observados
+            "shortcode[lang]": "L1",
+            "shortcode[event_order]": "ASC",
+            "shortcode[filters]": "yes",
+            "shortcode[filter_type]": "default",
+            "shortcode[show_limit_paged]": "1",
+            "shortcode[ics]": "no",
+        }
+        return data
+
+    def _fetch_day(d):
+        resp = s.post(AJAX, data=_fetch_day_payload(d), timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+
+    # --- Parseo HTML del bloque 'html' de cada evento
+    def _parse_event_item(item, fallback_date):
+        html = item.get("html") or ""
+        soup = BeautifulSoup(html, "html.parser")
+
+        a = soup.select_one("a.evcal_list_a") or soup.find("a")
+        link = a["href"].strip() if a and a.has_attr("href") else BASE
+
+        # título visible
+        title_el = soup.select_one(".evcal_event_title")
+        title = title_el.get_text(strip=True) if title_el else (item.get("event_title") or "Sin título")
+
+        # fecha (día + mes + año visibles en el bloque)
+        dayblock = soup.select_one(".evoet_dayblock")
+        day_el = soup.select_one(".evo_start .date")
+        month_txt = dayblock.get("data-smon") if dayblock and dayblock.has_attr("data-smon") else ""
+        year_txt = dayblock.get("data-syr") if dayblock and dayblock.has_attr("data-syr") else str(fallback_date.year)
+        if day_el and month_txt:
+            date_text = f"{day_el.get_text(strip=True)} {month_txt} {year_txt}"
+            fecha_dt = dateparser.parse(date_text, languages=["es"])
+        else:
+            fecha_dt = datetime(fallback_date.year, fallback_date.month, fallback_date.day)
+
+        # hora (texto mostrado)
+        time_el = soup.select_one(".evo_start .time")
+        hora_text = time_el.get_text(strip=True) if time_el else ""
+
+        # localización
+        loc_em = soup.select_one(".evcal_location")
+        loc_name = ""
+        add_str = ""
+        if loc_em:
+            name_el = loc_em.select_one(".event_location_name")
+            loc_name = name_el.get_text(" ", strip=True) if name_el else loc_em.get_text(" ", strip=True)
+            add_str = (loc_em.get("data-add_str") or "").strip()
+        location = f"{loc_name}, {add_str}".strip(", ").strip() or "Gijón"
+
+        # disciplina inferida
+        disciplina = inferir_disciplina(title)
+
+        return {
+            "fuente": "AgendaGijon",
+            "evento": title,
+            "fecha": fecha_dt,
+            "hora": hora_text,
+            "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location)}", "{location}")',
+            "link": link,
+            "disciplina": disciplina
+        }
+
+    # --- Bucle principal (misma semántica que el resto: lista `events`)
+    events = []
+    base_date = start_date or datetime.now().date()
+
+    for i in range(days):
+        d = base_date + timedelta(days=i)
+        try:
+            payload = _fetch_day(d)
+        except Exception as e:
+            print(f"⚠️ Error pidiendo el día {d}: {e}")
+            continue
+
+        if payload.get("status") != "GOOD":
+            continue
+
+        for item in payload.get("json", []):
+            ev = _parse_event_item(item, d)
+            # Evitar duplicados por link
+            if any(x["link"] == ev["link"] for x in events):
+                continue
+            events.append(ev)
+            try:
+                print(f"✅ AgendaGijon: {ev['evento']} ({ev['fecha'].date()})")
+            except Exception:
+                print(f"✅ AgendaGijon: {ev['evento']}")
+
+    print(f"🎉 Total eventos AgendaGijon: {len(events)}")
+    return events
+
     
 def inferir_disciplina(titulo):
     titulo = titulo.lower()

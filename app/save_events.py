@@ -46,7 +46,8 @@ def guardar_eventos(scrapers=None):
             get_events_asturiasconvivencias,
             get_events_gijon_umami,
             get_events_asturias,
-            get_events_jarascada
+            get_events_jarascada,
+            get_events_agenda_gijon
         )
 
         tematicas = [
@@ -61,23 +62,24 @@ def guardar_eventos(scrapers=None):
         ]
 
         scrapers = [
-            get_events_gijon,
-            get_events_oviedo,
-            get_events_mieres,
-            get_events_asturiescultura,
-            get_events_aviles,
-            get_events_siero,
-            get_events_conciertosclub,
-            lambda: get_events_turismoasturias(tematicas=tematicas),
-            get_events_laboral,
-            get_events_fiestasasturias_api,
-            get_events_fiestasasturias_simcal,
-            get_events_camaragijon_recinto,
-            get_events_laboral_actividades,
-            get_events_asturiasconvivencias,
-            get_events_gijon_umami,
-            get_events_asturias,
-            get_events_jarascada
+            # get_events_gijon,
+            # get_events_oviedo,
+            # get_events_mieres,
+            # get_events_asturiescultura,
+            # get_events_aviles,
+            # get_events_siero,
+            # get_events_conciertosclub,
+            # lambda: get_events_turismoasturias(tematicas=tematicas),
+            # get_events_laboral,
+            # get_events_fiestasasturias_api,
+            # get_events_fiestasasturias_simcal,
+            # get_events_camaragijon_recinto,
+            # get_events_laboral_actividades,
+            # get_events_asturiasconvivencias,
+            # get_events_gijon_umami,
+            # get_events_asturias,
+            # get_events_jarascada,
+            get_events_agenda_gijon
         ]
 
     nuevos = 0
