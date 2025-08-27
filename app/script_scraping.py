@@ -1689,7 +1689,8 @@ def get_events_jarascada(months_ahead=2, only_future=True, offline_path=None):
     return events
 
 # --------------------------
-# Scraping Agenda Gijón (EventON) - 7 días vista (dedupe fuerte + filtro por día)
+# Scraping Agenda Gijón (EventON) - 7 días vista
+# Navegación robusta por día usando .evo_cal_data[data-sc]
 # --------------------------
 def get_events_agenda_gijon(days_ahead=7):
     BASE = "https://agendagijon.com"
@@ -1700,7 +1701,7 @@ def get_events_agenda_gijon(days_ahead=7):
     except Exception:
         TZI = None
 
-    # ---- helpers ----
+    # ---- helpers de fecha ----
     def _parse_dt_from_unix(start_unix):
         if not start_unix:
             return None
@@ -1711,21 +1712,19 @@ def get_events_agenda_gijon(days_ahead=7):
             return None
 
     def _parse_start_dt_from_box_slow(box):
-        # 1) meta[itemprop="startDate"]
+        # meta[itemprop="startDate"]
         meta = box.select_one('meta[itemprop="startDate"]')
         dt_str = meta.get("content") if meta else None
 
-        # 2) JSON-LD
+        # JSON-LD
         if not dt_str:
             for s in box.select('script[type="application/ld+json"]'):
                 try:
                     j = json.loads(s.string or "{}")
                     if isinstance(j, dict) and j.get("startDate"):
-                        dt_str = j["startDate"]
-                        break
+                        dt_str = j["startDate"]; break
                 except Exception:
                     pass
-
         if not dt_str:
             return None
 
@@ -1744,33 +1743,21 @@ def get_events_agenda_gijon(days_ahead=7):
             dt = dt.replace(tzinfo=TZI)
         return dt
 
-    def _first_event_signature(driver):
-        html = None
+    # ---- leer estado del calendario (.evo_cal_data[data-sc]) ----
+    def _get_fixed_from_dom(driver):
         try:
-            html = driver.find_element(By.ID, "evcal_list").get_attribute("innerHTML")
+            sc_raw = driver.execute_script(
+                "return document.querySelector('.evo_cal_data')?.getAttribute('data-sc') || '';"
+            )
+            if not sc_raw:
+                return 0, 0, 0, {}
+            sc = json.loads(sc_raw)
+            fd = int(sc.get("fixed_day") or 0)
+            fm = int(sc.get("fixed_month") or 0)
+            fy = int(sc.get("fixed_year") or 0)
+            return fd, fm, fy, sc
         except Exception:
-            pass
-        try:
-            el = driver.find_element(By.CSS_SELECTOR, "#evcal_list .eventon_list_event")
-        except Exception:
-            return (None, None, html)
-
-        # fecha y data-time del primer evento
-        try:
-            box_html = el.get_attribute("outerHTML") or ""
-            bx = BeautifulSoup(box_html, "html.parser")
-            # intenta unix primero desde data-time
-            data_time = el.get_attribute("data-time") or ""
-            start_unix = data_time.split("-")[0] if data_time else ""
-            dt = _parse_dt_from_unix(start_unix)
-            if not dt:
-                dt = _parse_start_dt_from_box_slow(bx)
-            fdate = (dt.astimezone(TZI) if (TZI and dt and dt.tzinfo) else dt).date() if dt else None
-        except Exception:
-            fdate = None
-            data_time = None
-
-        return (fdate, data_time, html)
+            return 0, 0, 0, {}
 
     def _has_no_events(driver):
         try:
@@ -1794,51 +1781,47 @@ def get_events_agenda_gijon(days_ahead=7):
         except Exception:
             return False
 
+    # ---- ir al día siguiente y comprobar que .evo_cal_data cambió a la fecha objetivo ----
     def _goto_next_day_and_wait(driver, target_date):
-        prev_date, prev_dt, prev_html = _first_event_signature(driver)
-        # click con JS (más fiable)
-        try:
-            nxt = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "evcal_next")))
-            driver.execute_script("arguments[0].click();", nxt)
-        except Exception:
+        prev_fd, prev_fm, prev_fy, _ = _get_fixed_from_dom(driver)
+
+        # varios intentos por si el click no “engancha”
+        for attempt in range(3):
             try:
-                driver.execute_script("document.getElementById('evcal_next')?.click();")
+                nxt = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "evcal_next")))
+                driver.execute_script("arguments[0].click();", nxt)
             except Exception:
-                pass
+                driver.execute_script("document.getElementById('evcal_next')?.click();")
 
-        def _changed(drv):
-            fd, dt_attr, html_now = _first_event_signature(drv)
-            if _has_no_events(drv):
-                return True
-            if dt_attr and dt_attr != prev_dt:
-                return True
-            if fd and fd == target_date:
-                return True
-            if html_now and prev_html and html_now != prev_html:
-                return True
-            return False
+            # esperar a que cargue algo (eventos o mensaje “no hay eventos”)
+            _wait_events_loaded(driver, timeout=12)
 
-        changed = False
-        try:
-            WebDriverWait(driver, 12).until(_changed)
-            changed = True
-        except Exception:
-            changed = False
+            # comprobar cambio de fixed_* y que coincide con target_date
+            try:
+                WebDriverWait(driver, 8).until(lambda d: _get_fixed_from_dom(d)[:3] != (prev_fd, prev_fm, prev_fy))
+            except Exception:
+                pass  # puede no cambiar a la primera, reintentamos
 
-        if not changed:
-            print("⚠️ La vista no cambió tras 'siguiente'")
-        return changed
+            fd, fm, fy, _ = _get_fixed_from_dom(driver)
+            # depuración (opcional): print(f"↪️ Vista actual: {fd}-{fm}-{fy} / objetivo: {target_date.day}-{target_date.month}-{target_date.year}")
+            if (fd, fm, fy) == (target_date.day, target_date.month, target_date.year):
+                return True  # estamos en el día correcto
 
-    # ---- recolección con dedupe fuerte ----
-    seen_keys = set()   # claves únicas globales de la sesión
+            prev_fd, prev_fm, prev_fy = fd, fm, fy
+
+        print("⚠️ La vista no cambió al día objetivo tras 'siguiente'")
+        return False
+
+    # ---- recolectar eventos para el día visible, filtrando por fecha exacta ----
+    seen_keys = set()
 
     def _collect_from_dom(driver, expected_date, debug_label=""):
         soup = BeautifulSoup(driver.page_source, "html.parser")
         boxes = soup.select("#evcal_list .eventon_list_event")
         events_day = []
 
-        # año visible (fallback para fecha textual)
-        year_visible = datetime.now().year
+        # año visible (fallback si hace falta)
+        year_visible = expected_date.year
         head = soup.select_one(".evo_month_title")
         if head:
             try:
@@ -1850,28 +1833,26 @@ def get_events_agenda_gijon(days_ahead=7):
                 pass
 
         for box in boxes:
-            # id del evento y unix
             eid = box.get("data-event_id")
             if not eid:
                 bid = box.get("id", "")
                 m = re.search(r"event_(\d+)_", bid)
                 eid = m.group(1) if m else None
+
             data_time = box.get("data-time") or ""
             start_unix = data_time.split("-")[0] if data_time else ""
+            dt = _parse_dt_from_unix(start_unix) or _parse_start_dt_from_box_slow(box)
 
-            # fecha/hora: primero unix (fiable), luego meta/json-ld, luego tarjetas
-            dt = _parse_dt_from_unix(start_unix)
-            if not dt:
-                dt = _parse_start_dt_from_box_slow(box)
             if not dt:
                 try:
                     d_el = box.select_one(".evo_start .date")
                     m_el = box.select_one(".evo_start .month")
-                    dd = int(d_el.get_text(strip=True)) if d_el else datetime.now().day
+                    dd = int(d_el.get_text(strip=True)) if d_el else expected_date.day
                     mm = (m_el.get_text(strip=True) if m_el else "")
-                    dt = dateparser.parse(f"{dd} {mm} {year_visible}", languages=["es"]) or datetime.now()
+                    dt = dateparser.parse(f"{dd} {mm} {year_visible}", languages=["es"]) or datetime.combine(expected_date, datetime.min.time())
                 except Exception:
-                    dt = datetime.now()
+                    dt = datetime.combine(expected_date, datetime.min.time())
+
                 if TZI and dt.tzinfo is None:
                     dt = dt.replace(tzinfo=TZI)
 
@@ -1879,7 +1860,6 @@ def get_events_agenda_gijon(days_ahead=7):
             if dt.date() != expected_date:
                 continue
 
-            # título
             title_el = box.select_one(".evcal_event_title")
             title = title_el.get_text(" ", strip=True) if title_el else "Sin título"
             title_norm = re.sub(r"\s+", " ", title.strip().lower())
@@ -1895,7 +1875,8 @@ def get_events_agenda_gijon(days_ahead=7):
                     pass
             if not link:
                 a = box.select_one("a[href]")
-                if a: link = a.get("href")
+                if a:
+                    link = a.get("href")
             if not link:
                 link = BASE + "/"
 
@@ -1915,7 +1896,7 @@ def get_events_agenda_gijon(days_ahead=7):
             hora = (dt.astimezone(TZI) if (TZI and dt.tzinfo) else dt).strftime("%H:%M") if start_unix else \
                    (box.select_one(".evo_start .time").get_text(strip=True) if box.select_one(".evo_start .time") else "")
 
-            # ---- clave única fuerte ----
+            # clave única fuerte
             if eid and start_unix:
                 key = ("eid_unix", eid, int(start_unix))
             else:
@@ -1925,7 +1906,6 @@ def get_events_agenda_gijon(days_ahead=7):
                 continue
             seen_keys.add(key)
 
-            # disciplina
             try:
                 disciplina = inferir_disciplina(title)
             except Exception:
@@ -1945,12 +1925,12 @@ def get_events_agenda_gijon(days_ahead=7):
             print(f"✅ {debug_label}: {len(events_day)} eventos leídos del DOM")
         return events_day
 
-    # ---- main Selenium ----
+    # ---- flujo principal (Selenium) ----
     events = []
     driver = get_selenium_driver(headless=True)
     try:
         driver.get(BASE)
-        # cookies
+        # aceptar cookies
         try:
             WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.ID, "cn-accept-cookie"))).click()
             time.sleep(0.2)
@@ -1958,14 +1938,22 @@ def get_events_agenda_gijon(days_ahead=7):
             pass
 
         _wait_events_loaded(driver, timeout=12)
-        today = (datetime.now(TZI).date() if TZI else datetime.now().date())
+
+        # día actual que entiende el sitio (desde .evo_cal_data)
+        fd, fm, fy, _ = _get_fixed_from_dom(driver)
+        if not (fd and fm and fy):
+            # fallback a “hoy”
+            today = (datetime.now(TZI).date() if TZI else datetime.now().date())
+        else:
+            today = datetime(fy, fm, fd).date()
 
         for i in range(int(days_ahead)):
             target = today + timedelta(days=i)
-            if i > 0:
-                if not _goto_next_day_and_wait(driver, target):
-                    time.sleep(0.6)
-                    _goto_next_day_and_wait(driver, target)
+            if i == 0:
+                # comprobar que estamos en el día 0 correcto; si no, no pasa nada: filtramos por fecha
+                pass
+            else:
+                _goto_next_day_and_wait(driver, target)
 
             _wait_events_loaded(driver, timeout=10)
             events.extend(_collect_from_dom(driver, expected_date=target, debug_label=str(target)))
@@ -1978,17 +1966,18 @@ def get_events_agenda_gijon(days_ahead=7):
         except Exception:
             pass
 
-    # dedupe final por si acaso
+    # dedupe final
     uniq, seen2 = [], set()
     for ev in events:
         k = (ev["fuente"], ev["link"], ev["fecha"].isoformat())
-        if k in seen2: 
+        if k in seen2:
             continue
         seen2.add(k)
         uniq.append(ev)
 
     print(f"🎉 Total eventos Agenda Gijón: {len(uniq)}")
     return uniq
+
 
 
 
