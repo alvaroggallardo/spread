@@ -1697,7 +1697,7 @@ def get_events_jarascada(months_ahead=2, only_future=True, offline_path=None):
 # --------------------------
 # Scraping Agenda Gijón (EventON) - 7 días vista
 # --------------------------
-def get_events_agendagijon(days_ahead=7):
+def get_events_agenda_gijon(days_ahead=7):
 
     BASE = "https://agendagijon.com"
     AJAX = f"{BASE}/wp-admin/admin-ajax.php"
