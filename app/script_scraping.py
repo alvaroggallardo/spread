@@ -1,9 +1,16 @@
-import pandas as pd
-import requests
-from bs4 import BeautifulSoup, Comment
+import re
 import json
-from geopy.geocoders import Nominatim
+import time
+from datetime import datetime, timedelta
+
+import requests
 import dateparser
+from bs4 import BeautifulSoup, Comment
+from ics import Calendar
+from dateutil import parser as du_parser  # evita confundir con 'dateparser'
+
+from urllib.parse import urljoin, quote_plus
+
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -11,19 +18,10 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
-from datetime import datetime
-from urllib.parse import quote_plus
-#from IPython.display import display, HTML
-import time
-from urllib.parse import urljoin, quote_plus
-from dateparser.search import search_dates
-from datetime import datetime
-import re
-from urllib.parse import urljoin, quote_plus
-from datetime import datetime, timedelta
-from ics import Calendar
-from dateutil import parser
+
 from zoneinfo import ZoneInfo
+import pandas as pd
+from geopy.geocoders import Nominatim
 
 # --------------------------
 # Geocoding
@@ -1690,18 +1688,13 @@ def get_events_jarascada(months_ahead=2, only_future=True, offline_path=None):
     print(f"🎉 Total eventos Jarascada: {len(events)}")
     return events
 
-
-# --------------------------
-# Scraping Agenda Gijón (AJAX diario) -> MISMA ESTRUCTURA (events: list[dict])
-# --------------------------
 # --------------------------
 # Scraping Agenda Gijón (EventON) - 7 días vista
 # --------------------------
 def get_events_agenda_gijon(days_ahead=7):
 
-    # --- TZ Madrid (usa zoneinfo si lo tienes; si no, naive + hora de texto) ---
+    # TZ Madrid (si falla, trabajamos naive y solo usamos la hora en texto)
     try:
-        from zoneinfo import ZoneInfo
         TZI = ZoneInfo("Europe/Madrid")
     except Exception:
         TZI = None
@@ -1726,7 +1719,7 @@ def get_events_agenda_gijon(days_ahead=7):
                 sc = json.loads(cal_data["data-sc"])
             except Exception:
                 sc = {}
-        # defaults mínimos por si acaso
+        # Defaults mínimos por si acaso
         if not sc:
             sc = {
                 "calendar_type": "daily",
@@ -1763,6 +1756,7 @@ def get_events_agenda_gijon(days_ahead=7):
                 eid = m.group(1) if m else None
             if not eid:
                 continue
+
             # URL preferente desde JSON-LD
             found = None
             for s in box.select('script[type="application/ld+json"]'):
@@ -1817,7 +1811,7 @@ def get_events_agenda_gijon(days_ahead=7):
                 "action": "the_ajax_ev_cal",
                 "ajaxtype": "dv_newday",
                 "direction": "none",
-                # 👉 Algunos sitios piden 'nonce', otros 'postnonce' (mandamos ambos)
+                # Algunos sitios requieren 'nonce', otros 'postnonce' (enviamos ambos)
                 "nonce": postnonce,
                 "postnonce": postnonce,
             }
@@ -1838,7 +1832,6 @@ def get_events_agenda_gijon(days_ahead=7):
             try:
                 data = r.json()
             except Exception:
-                # a veces devuelve JSON en texto
                 try:
                     data = json.loads(txt)
                 except Exception:
@@ -1886,7 +1879,7 @@ def get_events_agenda_gijon(days_ahead=7):
                         "evento": title,
                         "fecha": dt,
                         "hora": hora,
-                        "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote(location_text)}", "{location_text}")',
+                        "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location_text)}", "{location_text}")',
                         "link": link,
                         "disciplina": disciplina
                     })
@@ -1907,7 +1900,7 @@ def get_events_agenda_gijon(days_ahead=7):
         "Cache-Control": "no-cache",
     })
     try:
-        # quita el banner de cookies
+        # Evita el bloqueo del banner de cookies
         sess.cookies.set("cookie_notice_accepted", "true", domain="agendagijon.com", path="/")
     except Exception:
         pass
@@ -1928,7 +1921,7 @@ def get_events_agenda_gijon(days_ahead=7):
         driver = get_selenium_driver(headless=True)
         try:
             driver.get(BASE)
-            # aceptar cookies si sale
+            # aceptar cookies si aparece
             try:
                 WebDriverWait(driver, 5).until(
                     EC.element_to_be_clickable((By.ID, "cn-accept-cookie"))
@@ -1937,33 +1930,24 @@ def get_events_agenda_gijon(days_ahead=7):
             except Exception:
                 pass
 
-            # empezamos en el día actual y recolectamos, luego avanzamos con la flecha "siguiente"
             def _collect_from_dom():
                 page = BeautifulSoup(driver.page_source, "html.parser")
                 day_boxes = page.select("#evcal_list .eventon_list_event")
                 if not day_boxes:
                     return []
-                # averigua la fecha del bloque por meta startDate del primer evento
                 day_events = []
                 for box in day_boxes:
-                    # fecha desde JSON-LD
-                    start_iso = None
+                    # fecha (JSON-LD si existe)
+                    dt = None
                     for s in box.select('script[type="application/ld+json"]'):
                         try:
                             j = json.loads(s.string or "{}")
                             if isinstance(j, dict) and j.get("startDate"):
-                                start_iso = j["startDate"]
+                                start_iso = j["startDate"].replace("+0:00", "+00:00")
+                                dt = datetime.fromisoformat(start_iso)
                                 break
                         except Exception:
                             pass
-                    if start_iso:
-                        try:
-                            # "2025-8-27T22:30+0:00" -> lo parseamos rápido
-                            dt = datetime.fromisoformat(start_iso.replace("+0:00", "+00:00"))
-                        except Exception:
-                            dt = None
-                    else:
-                        dt = None
 
                     title_el = box.select_one(".evcal_event_title")
                     title = title_el.get_text(" ", strip=True) if title_el else "Sin título"
@@ -1980,7 +1964,8 @@ def get_events_agenda_gijon(days_ahead=7):
                             pass
                     if not link:
                         a = box.select_one("a[href]")
-                        if a: link = a.get("href")
+                        if a:
+                            link = a.get("href")
 
                     # localización
                     attrs = box.select_one(".event_location_attrs")
@@ -1994,23 +1979,22 @@ def get_events_agenda_gijon(days_ahead=7):
                         full_loc = box.select_one(".evoet_location")
                         location_text = (full_loc.get_text(" ", strip=True) if full_loc else "") or name or "Gijón"
 
-                    # hora
+                    # hora y fecha final
                     if dt:
-                        hora = (dt.astimezone(TZI) if TZI else dt).strftime("%H:%M")
-                        fecha_dt = (dt.astimezone(TZI) if TZI else dt)
+                        dt_local = dt.astimezone(TZI) if TZI else dt
+                        hora = dt_local.strftime("%H:%M")
+                        fecha_dt = dt_local
                     else:
-                        # fallback: hora de la “tarjeta”
+                        # fallback: hora del bloque + fecha deducida del bloque (día/mes visibles)
                         t_el = box.select_one(".evo_start .time")
                         hora = t_el.get_text(strip=True) if t_el else ""
-                        # fecha del encabezado (día + mes en los bloques)
                         d_el = box.select_one(".evo_start .date")
                         m_el = box.select_one(".evo_start .month")
                         y = datetime.now().year
                         try:
                             day_i = int(d_el.get_text(strip=True)) if d_el else datetime.now().day
                             mes = (m_el.get_text(strip=True) if m_el else "")
-                            from dateparser import parse as dparse
-                            fecha_dt = dparse(f"{day_i} {mes} {y}", languages=["es"]) or datetime.now()
+                            fecha_dt = dateparser.parse(f"{day_i} {mes} {y}", languages=["es"]) or datetime.now()
                         except Exception:
                             fecha_dt = datetime.now()
 
@@ -2027,30 +2011,27 @@ def get_events_agenda_gijon(days_ahead=7):
                         "evento": title,
                         "fecha": fecha_dt,
                         "hora": hora,
-                        "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote(location_text)}", "{location_text}")',
+                        "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location_text)}", "{location_text}")',
                         "link": link or BASE + "/",
                         "disciplina": disciplina
                     })
                 return day_events
 
-            # recolecta hoy + avanza 6 veces
+            # Recolecta hoy + avanza (days_ahead-1) veces
             for step in range(int(days_ahead)):
                 events.extend(_collect_from_dom())
-                # click siguiente
                 if step < int(days_ahead) - 1:
                     try:
+                        old_list = WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.ID, "evcal_list"))
+                        )
                         nxt = WebDriverWait(driver, 10).until(
                             EC.element_to_be_clickable((By.ID, "evcal_next"))
                         )
                         nxt.click()
-                        # espera a que cambie el HTML del listado
-                        WebDriverWait(driver, 10).until(
-                            EC.staleness_of(driver.find_element(By.ID, "evcal_list"))
-                        )
-                        # pequeña pausa para que se regenere el nodo
+                        WebDriverWait(driver, 10).until(EC.staleness_of(old_list))
                         time.sleep(0.6)
                     except Exception:
-                        # fallback: espera fija
                         time.sleep(1.2)
         finally:
             try:
@@ -2058,12 +2039,12 @@ def get_events_agenda_gijon(days_ahead=7):
             except Exception:
                 pass
 
-    # elimina duplicados por link (por si ambas rutas aportaron)
+    # Dedupe por link
     uniq = []
     seen = set()
     for ev in events:
         k = ev.get("link") or (ev.get("evento"), ev.get("fecha"))
-        if k in seen: 
+        if k in seen:
             continue
         seen.add(k)
         uniq.append(ev)
