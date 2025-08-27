@@ -23,6 +23,7 @@ from urllib.parse import urljoin, quote_plus
 from datetime import datetime, timedelta
 from ics import Calendar
 from dateutil import parser
+from zoneinfo import ZoneInfo
 
 # --------------------------
 # Geocoding
@@ -1693,160 +1694,343 @@ def get_events_jarascada(months_ahead=2, only_future=True, offline_path=None):
 # --------------------------
 # Scraping Agenda Gijón (AJAX diario) -> MISMA ESTRUCTURA (events: list[dict])
 # --------------------------
-def get_events_agenda_gijon(days=7, start_date=None, nonce=None):
+# --------------------------
+# Scraping Agenda Gijón (EventON) - 7 días vista
+# --------------------------
+def get_events_agendagijon(days_ahead=7):
 
     BASE = "https://agendagijon.com"
     AJAX = f"{BASE}/wp-admin/admin-ajax.php"
-
-    # --- Sesión HTTP con cabeceras "normales"
-    s = requests.Session()
-    s.headers.update({
+    tz = ZoneInfo("Europe/Madrid")
+    headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        "Referer": f"{BASE}/",
-        "Origin": BASE,
-        "X-Requested-With": "XMLHttpRequest",
-    })
+                      "(KHTML, like Gecko) Chrome/125.0 Safari/537.36",
+        "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
+        "Referer": BASE + "/",
+    }
 
-    # --- Descubrir nonce desde la home si no lo pasamos
-    if not nonce:
-        try:
-            r = s.get(f"{BASE}/", timeout=20)
-            r.raise_for_status()
-            # Varias heurísticas: "nonce":"xxxxx", nonce='xxxxx', data-nonce="xxxxx"
-            m = re.search(r'nonce[\'"\s:=-]*[\'"]([a-f0-9]{8,})[\'"]', r.text, re.I)
-            if not m:
-                m = re.search(r'data-nonce=[\'"]([a-f0-9]{8,})[\'"]', r.text, re.I)
-            if m:
-                nonce = m.group(1)
-            else:
-                print("⚠️ No se pudo extraer nonce de la home.")
-                return []
-        except Exception as e:
-            print(f"⚠️ Error obteniendo nonce: {e}")
-            return []
+    sess = requests.Session()
+    sess.headers.update(headers)
 
-    # --- Ventana 'diaria' como hace el plugin: 10:00 del día anterior → 09:59:59 del día D
-    def _day_unix_window(d):
-        try:
-            from zoneinfo import ZoneInfo  # stdlib 3.9+
-            tz = ZoneInfo("Europe/Madrid")
-            start = datetime(d.year, d.month, d.day, 10, 0, 0, tzinfo=tz) - timedelta(days=1)
-            end   = datetime(d.year, d.month, d.day, 9, 59, 59, tzinfo=tz)
-        except Exception:
-            # Fallback si no hay zoneinfo: depende del TZ del servidor
-            start = datetime(d.year, d.month, d.day, 10, 0, 0) - timedelta(days=1)
-            end   = datetime(d.year, d.month, d.day, 9, 59, 59)
-        return int(start.timestamp()), int(end.timestamp())
+    def _fresh_nonce_and_ajaxurl():
+        """Carga la portada y saca un nonce utilizable para dv_newday."""
+        r = sess.get(BASE + "/", timeout=15)
+        r.raise_for_status()
+        html = r.text
 
-    # --- POST para un día concreto (emulando los campos "shortcode[...]")
-    def _fetch_day_payload(d):
-        su, eu = _day_unix_window(d)
+        # 1) intenta data-nonce="..."
+        m = re.search(r'data-nonce=["\']([a-f0-9]+)["\']', html, re.I)
+        if not m:
+            # 2) intenta "nonce":"..."
+            m = re.search(r'"nonce"\s*:\s*"([a-f0-9]+)"', html, re.I)
+        if not m:
+            # 3) intenta nonce=xxxx en cadenas de debug
+            m = re.search(r'nonce=([a-f0-9]+)', html, re.I)
+
+        if not m:
+            raise RuntimeError("No se pudo localizar un nonce válido en la portada.")
+
+        return m.group(1), AJAX  # normalmente el endpoint es admin-ajax.php
+
+    def _mk_sc_for(day_dt):
+        """Construye el diccionario 'shortcode[...]' para un día concreto (vista diaria)."""
+        start_local = datetime(day_dt.year, day_dt.month, day_dt.day, 0, 0, 0, tzinfo=tz)
+        end_local = start_local + timedelta(days=1) - timedelta(seconds=1)
+        su = int(start_local.timestamp())
+        eu = int(end_local.timestamp())
+
+        # Plantilla mínima estable basada en lo que devuelve el sitio
+        sc = {
+            "accord": "no",
+            "bottom_nav": "no",
+            "cal_id": "",
+            "cal_init_nonajax": "no",
+            "calendar_type": "daily",
+            "day_incre": "0",
+            "dv_scroll_style": "def",
+            "dv_scroll_type": "",
+            "dv_view_style": "onedayplus",
+            "ep_fields": "",
+            "etc_override": "no",
+            "evc_open": "no",
+            "event_count": "0",
+            "event_location": "all",
+            "event_order": "ASC",
+            "event_organizer": "all",
+            "event_parts": "no",
+            "event_past_future": "all",
+            "event_status": "all",
+            "event_tag": "all",
+            "event_type": "all",
+            "event_type_2": "all",
+            "event_type_3": "all",
+            "event_type_4": "all",
+            "event_type_5": "all",
+            "event_virtual": "all",
+            "eventtop_date_style": "0",
+            "eventtop_style": "4",
+            "exp_jumper": "no",
+            "exp_so": "no",
+            "filter_relationship": "AND",
+            "filter_show_set_only": "no",
+            "filter_type": "default",
+            "filters": "yes",
+            "fixed_day": str(day_dt.day),
+            "fixed_month": str(day_dt.month),
+            "fixed_year": str(day_dt.year),
+            "focus_end_date_range": str(eu),
+            "focus_start_date_range": str(su),
+            "ft_event_priority": "no",
+            "header_title": "",
+            "hide_arrows": "no",
+            "hide_cancels": "no",
+            "hide_empty_months": "no",
+            "hide_end_time": "no",
+            "hide_et_dn": "no",
+            "hide_et_extra": "no",
+            "hide_et_tags": "no",
+            "hide_et_tl": "no",
+            "hide_ft": "no",
+            "hide_ft_img": "no",
+            "hide_month_headers": "no",
+            "hide_mult_occur": "no",
+            "hide_past": "no",
+            "hide_past_by": "ee",
+            "hide_so": "no",
+            "hide_sort_options": "no",
+            "ics": "no",
+            "jumper": "no",
+            "jumper_count": "5",
+            "jumper_offset": "0",
+            "lang": "L1",
+            "layout_changer": "no",
+            "livenow_bar": "yes",
+            "mapformat": "roadmap",
+            "mapiconurl": "",
+            "maps_load": "yes",
+            "mapscroll": "true",
+            "mapzoom": "18",
+            "members_only": "no",
+            "ml_priority": "no",
+            "ml_toend": "no",
+            "mo1st": "",
+            "month_incre": "0",
+            "number_of_months": "1",
+            "only_ft": "no",
+            "pec": "",
+            "s": "",
+            "search": "",
+            "search_all": "no",
+            "sep_month": "no",
+            "show_et_ft_img": "yes",
+            "show_limit": "no",
+            "show_limit_ajax": "no",
+            "show_limit_paged": "1",
+            "show_limit_redir": "",
+            "show_repeats": "no",
+            "show_search": "no",
+            "show_upcoming": "0",
+            "show_year": "no",
+            "social_share": "no",
+            "sort_by": "sort_date",
+            "tile_bg": "0",
+            "tile_bg_size": "full",
+            "tile_count": "2",
+            "tile_height": "0",
+            "tile_style": "0",
+            "tiles": "no",
+            "ux_val": "0",
+            "view_switcher": "no",
+            "wpml_l1": "",
+            "wpml_l2": "",
+            "wpml_l3": "",
+            "yl_priority": "no",
+            "yl_toend": "no",
+            "_cver": "4.5.9",
+        }
+        return sc
+
+    def _post_one_day(day_dt, nonce):
+        """Hace el POST de ese día; si falla por nonce, devuelve None para que forcemos refresh."""
+        sc = _mk_sc_for(day_dt)
         data = {
+            "direction": "none",
             "ajaxtype": "dv_newday",
             "nonce": nonce,
-
-            # parámetros del shortcode (mínimos para que responda igual que la vista 'daily')
-            "shortcode[calendar_type]": "daily",
-            "shortcode[dv_view_style]": "onedayplus",
-            "shortcode[fixed_day]": str(d.day),
-            "shortcode[fixed_month]": str(d.month),
-            "shortcode[fixed_year]": str(d.year),
-            "shortcode[focus_start_date_range]": str(su),
-            "shortcode[focus_end_date_range]": str(eu),
-
-            # algunos defaults observados
-            "shortcode[lang]": "L1",
-            "shortcode[event_order]": "ASC",
-            "shortcode[filters]": "yes",
-            "shortcode[filter_type]": "default",
-            "shortcode[show_limit_paged]": "1",
-            "shortcode[ics]": "no",
         }
-        return data
+        # aplanar shortcode[...] = valor
+        for k, v in sc.items():
+            data[f"shortcode[{k}]"] = v
 
-    def _fetch_day(d):
-        resp = s.post(AJAX, data=_fetch_day_payload(d), timeout=30)
-        resp.raise_for_status()
-        return resp.json()
-
-    # --- Parseo HTML del bloque 'html' de cada evento
-    def _parse_event_item(item, fallback_date):
-        html = item.get("html") or ""
-        soup = BeautifulSoup(html, "html.parser")
-
-        a = soup.select_one("a.evcal_list_a") or soup.find("a")
-        link = a["href"].strip() if a and a.has_attr("href") else BASE
-
-        # título visible
-        title_el = soup.select_one(".evcal_event_title")
-        title = title_el.get_text(strip=True) if title_el else (item.get("event_title") or "Sin título")
-
-        # fecha (día + mes + año visibles en el bloque)
-        dayblock = soup.select_one(".evoet_dayblock")
-        day_el = soup.select_one(".evo_start .date")
-        month_txt = dayblock.get("data-smon") if dayblock and dayblock.has_attr("data-smon") else ""
-        year_txt = dayblock.get("data-syr") if dayblock and dayblock.has_attr("data-syr") else str(fallback_date.year)
-        if day_el and month_txt:
-            date_text = f"{day_el.get_text(strip=True)} {month_txt} {year_txt}"
-            fecha_dt = dateparser.parse(date_text, languages=["es"])
-        else:
-            fecha_dt = datetime(fallback_date.year, fallback_date.month, fallback_date.day)
-
-        # hora (texto mostrado)
-        time_el = soup.select_one(".evo_start .time")
-        hora_text = time_el.get_text(strip=True) if time_el else ""
-
-        # localización
-        loc_em = soup.select_one(".evcal_location")
-        loc_name = ""
-        add_str = ""
-        if loc_em:
-            name_el = loc_em.select_one(".event_location_name")
-            loc_name = name_el.get_text(" ", strip=True) if name_el else loc_em.get_text(" ", strip=True)
-            add_str = (loc_em.get("data-add_str") or "").strip()
-        location = f"{loc_name}, {add_str}".strip(", ").strip() or "Gijón"
-
-        # disciplina inferida
-        disciplina = inferir_disciplina(title)
-
-        return {
-            "fuente": "AgendaGijon",
-            "evento": title,
-            "fecha": fecha_dt,
-            "hora": hora_text,
-            "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location)}", "{location}")',
-            "link": link,
-            "disciplina": disciplina
-        }
-
-    # --- Bucle principal (misma semántica que el resto: lista `events`)
-    events = []
-    base_date = start_date or datetime.now().date()
-
-    for i in range(days):
-        d = base_date + timedelta(days=i)
+        r = sess.post(AJAX, data=data, timeout=20)
+        if r.status_code == 403:
+            return None  # forzar renovar nonce
+        r.raise_for_status()
         try:
-            payload = _fetch_day(d)
-        except Exception as e:
-            print(f"⚠️ Error pidiendo el día {d}: {e}")
-            continue
+            payload = r.json()
+        except Exception:
+            # a veces WP devuelve HTML (caché/seguridad): interpretamos como fallo de nonce
+            return None
 
+        # status GOOD y hay objetos
         if payload.get("status") != "GOOD":
+            return {"status": "BAD", "events": []}
+
+        return {"status": "GOOD", "raw": payload}
+
+    # ---------------- main ----------------
+    events = []
+    try:
+        nonce, ajaxurl = _fresh_nonce_and_ajaxurl()
+    except Exception as e:
+        print(f"❌ No se pudo obtener nonce: {e}")
+        return events
+
+    today_local = datetime.now(tz).date()
+    max_offset = max(0, int(days_ahead) - 1)  # 7 días vista => 0..6
+
+    for d in range(0, max_offset + 1):
+        day = today_local + timedelta(days=d)
+
+        # 1º intento con nonce actual
+        out = _post_one_day(day, nonce)
+
+        # Si None (403 o JSON inválido), renueva nonce y reintenta 1 vez
+        if out is None:
+            try:
+                nonce, ajaxurl = _fresh_nonce_and_ajaxurl()
+                out = _post_one_day(day, nonce)
+            except Exception as e:
+                print(f"⚠️ Día {day} → error renovando nonce: {e}")
+                continue
+
+        if not out or out.get("status") != "GOOD":
+            print(f"⚠️ Día {day} → sin datos (status!=GOOD)")
             continue
 
-        for item in payload.get("json", []):
-            ev = _parse_event_item(item, d)
-            # Evitar duplicados por link
-            if any(x["link"] == ev["link"] for x in events):
-                continue
-            events.append(ev)
-            try:
-                print(f"✅ AgendaGijon: {ev['evento']} ({ev['fecha'].date()})")
-            except Exception:
-                print(f"✅ AgendaGijon: {ev['evento']}")
+        data = out["raw"]
+        items = data.get("json", []) or []
 
-    print(f"🎉 Total eventos AgendaGijon: {len(events)}")
+        if not items:
+            print(f"ℹ️ Día {day} → 0 eventos")
+            continue
+
+        # Parseo de cada evento
+        for it in items:
+            title = (it.get("event_title") or "").strip() or "Sin título"
+
+            # Hora/fecha: usar unix_start si existe (UTC) -> convertir a Europe/Madrid
+            ts = it.get("unix_start") or it.get("event_start_unix")
+            if not ts:
+                # fallback: JSON-LD en el HTML
+                ts = None
+
+            fecha_dt = None
+            if ts:
+                try:
+                    fecha_dt = datetime.fromtimestamp(int(ts), tz=timezone.utc).astimezone(tz)
+                except Exception:
+                    fecha_dt = None
+
+            # si no pudimos, mirar JSON-LD del campo "html"
+            if fecha_dt is None:
+                html = it.get("html", "")
+                if html:
+                    try:
+                        soup = BeautifulSoup(html, "html.parser")
+                        jld = soup.find("script", {"type": "application/ld+json"})
+                        if jld and jld.string:
+                            j = json.loads(jld.string)
+                            # startDate: "YYYY-M-DTHH:MM+0:00" -> parse y ajustar a tz local ignorando offset raro
+                            sd = j.get("startDate")
+                            if sd:
+                                from dateutil import parser as duparser
+                                naive = duparser.parse(sd)
+                                # tratarlo como hora local
+                                fecha_dt = naive.replace(tzinfo=tz)
+                    except Exception:
+                        pass
+
+            if not fecha_dt:
+                # sin fecha no lo metemos
+                print(f"⚠️ Evento sin fecha: {title}")
+                continue
+
+            hora_text = fecha_dt.strftime("%H:%M")
+
+            # Link + lugar: preferimos JSON-LD; luego evcal_exlink; luego nada
+            link = ""
+            lugar_texto = "Gijón"
+
+            html = it.get("html", "")
+            if html:
+                soup = BeautifulSoup(html, "html.parser")
+                # JSON-LD
+                jld = soup.find("script", {"type": "application/ld+json"})
+                if jld and jld.string:
+                    try:
+                        j = json.loads(jld.string)
+                        link = j.get("url") or link
+                        loc = j.get("location")
+                        if isinstance(loc, list) and loc:
+                            loc = loc[0]
+                        if isinstance(loc, dict):
+                            nombre_lugar = (loc.get("name") or "").strip()
+                            addr = ""
+                            if isinstance(loc.get("address"), dict):
+                                addr = (loc["address"].get("streetAddress") or "").strip()
+                            lugar_texto = (f"{nombre_lugar}, {addr}".strip(", ") or lugar_texto)
+                    except Exception:
+                        pass
+
+                # si no hay location en JSON-LD, intenta el bloque visible
+                if lugar_texto == "Gijón":
+                    loc_name = soup.select_one(".event_location_name")
+                    loc_attrs = soup.select_one(".event_location_attrs")
+                    if loc_name:
+                        nombre_lugar = loc_name.get_text(" ", strip=True)
+                        addr = ""
+                        if loc_attrs and loc_attrs.has_attr("data-location_address"):
+                            addr = loc_attrs["data-location_address"]
+                        lugar_texto = (f"{nombre_lugar}, {addr}".strip(", ") or lugar_texto)
+
+            if not link:
+                # intenta evcal_exlink del objeto pmv
+                exl = (it.get("event_pmv", {}) or {}).get("evcal_exlink", "")
+                if isinstance(exl, list):
+                    link = exl[0] if exl else ""
+                elif isinstance(exl, str):
+                    link = exl
+            if not link:
+                # fallback a la propia agenda con el id
+                _id = str(it.get("ID") or it.get("event_id") or "")
+                link = f"{BASE}/?event_id={_id}" if _id else BASE + "/"
+
+            disciplina = inferir_disciplina(title)
+
+            lugar_formula = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar_texto)}", "{lugar_texto}")'
+
+            # Evitar duplicados por link
+            if any(ev["link"] == link for ev in events):
+                print(f"🔁 Duplicado saltado: {title}")
+                continue
+
+            events.append({
+                "fuente": "AgendaGijon",
+                "evento": title,
+                "fecha": fecha_dt,         # datetime con tz Europe/Madrid
+                "hora": hora_text,         # "HH:MM"
+                "lugar": lugar_formula,
+                "link": link,
+                "disciplina": disciplina
+            })
+
+            print(f"✅ Gijón {day} – {title} @ {hora_text}")
+
+        # cortesía para no disparar rate-limits
+        time.sleep(0.4)
+
+    print(f"🎉 Total eventos Agenda Gijón: {len(events)}")
     return events
 
     
