@@ -1699,123 +1699,113 @@ def get_events_jarascada(months_ahead=2, only_future=True, offline_path=None):
 # --------------------------
 def get_events_agenda_gijon(days_ahead=7):
 
+    # --- TZ: Europe/Madrid con fallback si ZoneInfo no está disponible ---
+    try:
+        from zoneinfo import ZoneInfo
+        TZI = ZoneInfo("Europe/Madrid")
+    except Exception:
+        from dateutil import tz
+        TZI = tz.gettz("Europe/Madrid")
+
     BASE = "https://agendagijon.com"
     AJAX = f"{BASE}/wp-admin/admin-ajax.php"
-    TZI = ZoneInfo("Europe/Madrid")
 
-    def _canon_link(u: str) -> str:
-        """Normaliza enlaces para deduplicar con más fiabilidad."""
-        if not u:
-            return ""
-        u = u.strip()
-        pr = urlparse(u)
-        pr = pr._replace(query="", fragment="")
-        netloc = pr.netloc.lower().replace("www.", "")
-        pr = pr._replace(scheme="https", netloc=netloc)
-        return urlunparse(pr)
+    def _extract_nonce_from_html(html: str) -> str:
+        # Busca primero 'postnonce', si no, 'n'
+        m = re.search(r'"postnonce"\s*:\s*"([a-f0-9]{8,32})"', html, re.I)
+        if not m:
+            m = re.search(r'["\']n["\']\s*:\s*["\']([a-f0-9]{8,32})["\']', html, re.I)
+        return m.group(1) if m else ""
 
-    def _get_nonce(sess: requests.Session) -> str:
-        """Obtiene el nonce de EventON desde la home (o páginas comunes)."""
-        # Probamos con portada y con /events por si acaso
-        for path in ["", "/events", "/agenda", "/eventos"]:
+    def _extract_sc_template(html: str) -> dict:
+        soup = BeautifulSoup(html, "html.parser")
+        cal_data = soup.select_one(".evo_cal_data")
+        if not cal_data or not cal_data.has_attr("data-sc"):
+            return {}
+        try:
+            return json.loads(cal_data["data-sc"])
+        except Exception:
+            return {}
+
+    def _onedayplus_bounds(d: datetime) -> tuple[int, int]:
+        """
+        EventON 'onedayplus' usa una ventana de 10:00 del día anterior a 09:59:59 del día actual.
+        Coincide con los 'debug s/e' que devuelve la web.
+        """
+        start = (datetime(d.year, d.month, d.day, 10, 0, 0, tzinfo=TZI) - timedelta(days=1))
+        end = datetime(d.year, d.month, d.day, 9, 59, 59, tzinfo=TZI)
+        return int(start.timestamp()), int(end.timestamp())
+
+    def _list_to_val(v):
+        # En event_pmv muchas claves vienen como listas con 1 string
+        if isinstance(v, list) and v:
+            return v[0]
+        return v
+
+    def _parse_locations_by_event_id(day_html: str) -> dict:
+        """
+        Devuelve {event_id: 'Nombre, dirección?'} parseando el HTML del día.
+        Prefiere los data-attrs 'event_location_attrs'; si no, usa el texto de .event_location_name.
+        """
+        locs = {}
+        soup = BeautifulSoup(day_html or "", "html.parser")
+        for box in soup.select("div.eventon_list_event"):
+            eid = box.get("data-event_id")
+            if not eid:
+                # intenta del id="event_XXXX_0"
+                bid = box.get("id", "")
+                m = re.search(r"event_(\d+)_", bid)
+                eid = m.group(1) if m else None
+            if not eid:
+                continue
+
+            # 1) vía data-attrs
+            attrs = box.select_one(".event_location_attrs")
+            if attrs:
+                name = attrs.get("data-location_name") or ""
+                addr = attrs.get("data-location_address") or ""
+                location_text = f"{name}, {addr}".strip().strip(", ")
+            else:
+                # 2) vía etiqueta visible
+                name_el = box.select_one(".event_location_name")
+                name = name_el.get_text(" ", strip=True) if name_el else ""
+                # algunas veces la dirección va pegada tras la coma en el mismo span
+                full_loc = box.select_one(".evoet_location")
+                if full_loc:
+                    txt = full_loc.get_text(" ", strip=True)
+                    # si el texto arranca por el nombre, respetamos todo
+                    location_text = txt or name
+                else:
+                    location_text = name or "Gijón"
+
+            if not location_text:
+                location_text = "Gijón"
+            locs[str(eid)] = location_text
+        return locs
+
+    def _fallback_event_url_from_html(day_html: str, event_id: int | str) -> str | None:
+        """
+        Si no hay exlink en event_pmv, intenta sacar la URL propia del evento desde el JSON-LD del bloque correspondiente.
+        """
+        soup = BeautifulSoup(day_html or "", "html.parser")
+        box = soup.select_one(f"#event_{event_id}_0") or soup.select_one(f".event_{event_id}_0")
+        if not box:
+            return None
+        # Busca JSON-LD dentro del bloque
+        for s in box.select('script[type="application/ld+json"]'):
             try:
-                r = sess.get(BASE + path, timeout=20)
-                r.raise_for_status()
-                html = r.text
-                # Patrones típicos de EventON para el nonce
-                m = re.search(r'["\']nonce["\']\s*:\s*["\']([a-f0-9]{8,20})["\']', html, re.I)
-                if not m:
-                    m = re.search(r'name=["\']nonce["\']\s+value=["\']([a-zA-Z0-9]+)["\']', html)
-                if m:
-                    return m.group(1)
+                j = json.loads(s.string or "{}")
+                if isinstance(j, dict):
+                    url = j.get("url")
+                    if url:
+                        return url
             except Exception:
                 continue
-        print("⚠️ No se pudo extraer nonce; se intentará sin él (puede fallar).")
-        return ""
+        # Fallback: primer <a> dentro del bloque
+        a = box.select_one("a[href]")
+        return a.get("href") if a else None
 
-    def _day_bounds_unix(day_dt: datetime) -> tuple[int, int]:
-        """Devuelve (start,end) unix del día local Europe/Madrid."""
-        # Comienzo y fin del día en hora local (maneja DST vía ZoneInfo)
-        start_local = datetime(day_dt.year, day_dt.month, day_dt.day, 0, 0, 0, tzinfo=TZI)
-        end_local   = datetime(day_dt.year, day_dt.month, day_dt.day, 23, 59, 59, tzinfo=TZI)
-        return int(start_local.timestamp()), int(end_local.timestamp())
-
-    def _build_sc(day_dt: datetime, su: int, eu: int) -> dict:
-        """Replica los parámetros SC más relevantes para la ‘daily view’."""
-        d, m, y = day_dt.day, day_dt.month, day_dt.year
-        return {
-            "shortcode[calendar_type]": "daily",
-            "shortcode[fixed_day]": str(d),
-            "shortcode[fixed_month]": str(m),
-            "shortcode[fixed_year]": str(y),
-            "shortcode[lang]": "L1",
-            "shortcode[view_switcher]": "no",
-            "shortcode[show_limit_paged]": "1",
-            "shortcode[number_of_months]": "1",
-            "shortcode[tiles]": "no",
-            "shortcode[mapscroll]": "true",
-            "shortcode[filters]": "yes",
-            "shortcode[hide_past]": "no",
-            "shortcode[livenow_bar]": "yes",
-            # Rango de foco (unix)
-            "shortcode[focus_start_date_range]": str(su),
-            "shortcode[focus_end_date_range]": str(eu),
-            # Ajustes vistos en el payload del sitio (no todos son obligatorios)
-            "shortcode[hide_end_time]": "no",
-            "shortcode[hide_month_headers]": "no",
-            "shortcode[event_past_future]": "all",
-            "shortcode[event_status]": "all",
-            "shortcode[event_location]": "all",
-            "shortcode[event_organizer]": "all",
-            "shortcode[event_order]": "ASC",
-            "shortcode[sort_by]": "sort_date",
-            "shortcode[event_tag]": "all",
-            "shortcode[event_virtual]": "all",
-            "shortcode[show_repeats]": "no",
-        }
-
-    def _infer_location_from_block(block: BeautifulSoup) -> str:
-        """Del bloque #event_{ID}_0 intenta extraer 'Nombre, Dirección'."""
-        if not block:
-            return "Gijón"
-        # 1) Atributos consolidados
-        attr = block.select_one(".event_location_attrs")
-        if attr and attr.has_attr("data-location_name"):
-            name = attr["data-location_name"].strip()
-            addr = attr.get("data-location_address", "").strip()
-            if name and addr:
-                return f"{name}, {addr}"
-            if name:
-                return name
-        # 2) Texto visible
-        loc_name = block.select_one(".evoet_location .event_location_name")
-        if loc_name:
-            # A veces el sibling incluye la dirección
-            tail = loc_name.find_parent().get_text(" ", strip=True)
-            # tail suele venir como "Nombre, Dirección..." — devolvemos tal cual
-            return tail or loc_name.get_text(" ", strip=True)
-        return "Gijón"
-
-    def _get_event_url_from_block(block: BeautifulSoup) -> str:
-        """Del bloque extrae URL priorizando JSON-LD (schema)."""
-        if not block:
-            return ""
-        # JSON-LD con la URL del evento en agendagijon.com
-        script = block.select_one(".evo_event_schema script[type='application/ld+json']")
-        if script and script.string:
-            try:
-                data = json.loads(script.string)
-                url = data.get("url") or ""
-                if url:
-                    return url
-            except Exception:
-                pass
-        # Fallback: enlace visible (suele ser exlink a gijon.es)
-        a = block.select_one("a.evcal_list_a")
-        if a and a.has_attr("href"):
-            return a["href"]
-        return ""
-
+    # --- sesión HTTP con headers realistas ---
     sess = requests.Session()
     sess.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -1823,115 +1813,128 @@ def get_events_agenda_gijon(days_ahead=7):
         "Accept": "application/json, text/javascript, */*; q=0.01",
         "Referer": BASE + "/",
         "Origin": BASE,
+        "X-Requested-With": "XMLHttpRequest",
     })
 
-    nonce = _get_nonce(sess)
     events = []
 
-    # Ventana: hoy + days_ahead-1
-    today_local = datetime.now(TZI).date()
-    for i in range(days_ahead):
-        day = datetime.combine(today_local + timedelta(days=i), datetime.min.time()).replace(tzinfo=TZI)
-        su, eu = _day_bounds_unix(day)
+    try:
+        # 1) Cargar home para nonce y plantilla SC
+        home_html = sess.get(BASE, timeout=25).text
+        nonce = _extract_nonce_from_html(home_html)
+        sc_tpl = _extract_sc_template(home_html)
 
-        # Construcción del payload (action + SC + tipo de vista)
-        data = {
-            "action": "the_ajax_ev_cal",
-            "ajaxtype": "dv_newday",
-            "nonce": nonce,
-        }
-        data.update(_build_sc(day, su, eu))
+        # Fallback de SC si no se pudo extraer
+        if not sc_tpl:
+            sc_tpl = {
+                "calendar_type": "daily",
+                "dv_view_style": "onedayplus",
+                "event_status": "all",
+                "event_past_future": "all",
+                "event_order": "ASC",
+                "show_repeats": "no",
+                "show_limit_paged": "1",
+                "lang": "L1",
+            }
 
-        try:
-            r = sess.post(AJAX, data=data, timeout=25)
-            # Algunos WAF devuelven 400 si el nonce caducó: reintentar 1 vez con nuevo nonce
+        # 2) Loop días (hoy + days_ahead-1)
+        today = datetime.now(tz=TZI).date()
+        for i in range(int(days_ahead)):
+            day = datetime(today.year, today.month, today.day, tzinfo=TZI) + timedelta(days=i)
+            su, eu = _onedayplus_bounds(day)
+
+            sc = sc_tpl.copy()
+            sc.update({
+                "calendar_type": "daily",
+                "fixed_day": str(day.day),
+                "fixed_month": str(day.month),
+                "fixed_year": str(day.year),
+                "focus_start_date_range": str(su),
+                "focus_end_date_range": str(eu),
+            })
+
+            payload = {
+                "action": "the_ajax_ev_cal",
+                "ajaxtype": "dv_newday",
+                "nonce": nonce,
+                "direction": "none",
+            }
+            payload.update({f"shortcode[{k}]": v for k, v in sc.items()})
+
+            # POST (con reintento refrescando nonce si 400)
+            r = sess.post(AJAX, data=payload, timeout=30)
             if r.status_code == 400:
-                nonce = _get_nonce(sess)
-                data["nonce"] = nonce
-                r = sess.post(AJAX, data=data, timeout=25)
-
+                # refrescar nonce una sola vez
+                home_html = sess.get(BASE, timeout=25).text
+                nonce2 = _extract_nonce_from_html(home_html)
+                if nonce2 and nonce2 != nonce:
+                    nonce = nonce2
+                    payload["nonce"] = nonce
+                    r = sess.post(AJAX, data=payload, timeout=30)
             r.raise_for_status()
-            payload = r.json()
-        except Exception as e:
-            print(f"⚠️ {day.date()} error AJAX: {e}")
-            continue
 
-        items = payload.get("json", []) or []
-        html = payload.get("html", "") or ""
-        soup = BeautifulSoup(html, "html.parser")
-
-        print(f"🗓️ {day.date()} → {len(items)} items crudos del AJAX")
-
-        for it in items:
-            try:
-                title = (it.get("event_title") or "").strip() or "Sin título"
-
-                # Hora: preferimos _start_hour/_start_minute del payload meta
-                pmv = it.get("event_pmv", {}) or {}
-                sh = pmv.get("_start_hour", [""])
-                sm = pmv.get("_start_minute", [""])
-                sh = sh[0] if isinstance(sh, list) else sh
-                sm = sm[0] if isinstance(sm, list) else sm
-                hora_text = ""
-                if str(sh).isdigit() and str(sm).isdigit():
-                    hora_text = f"{int(sh):02d}:{int(sm):02d}"
-
-                # Fecha (datetime) desde unix + offset del item (para local)
-                start_ts = it.get("event_start_unix") or it.get("unix_start")
-                tz_off = it.get("timezone_offset", 0)  # típicamente -7200 en verano
-                fecha_dt = None
-                if start_ts:
-                    dt_utc = datetime.utcfromtimestamp(int(start_ts)).replace(tzinfo=timezone.utc)
-                    fecha_dt = (dt_utc - timedelta(seconds=int(tz_off))).astimezone(TZI)
-                else:
-                    # Fallback: el día que estamos iterando (sin hora)
-                    fecha_dt = day
-
-                # Bloque HTML por ID para extraer link/lugar
-                _id = it.get("ID") or it.get("event_id")
-                block = soup.select_one(f"#event_{_id}_0") if _id else None
-
-                # Link: priorizamos URL del post (agendagijon.com). Si no, exlink.
-                url_ev = _get_event_url_from_block(block)
-                if not url_ev:
-                    exl = pmv.get("evcal_exlink", "")
-                    if isinstance(exl, list):
-                        url_ev = exl[0] if exl else ""
-                    elif isinstance(exl, str):
-                        url_ev = exl
-                if not url_ev:
-                    url_ev = f"{BASE}/?event_id={_id}" if _id else BASE + "/"
-
-                link = _canon_link(url_ev)
-
-                # Lugar
-                lugar_texto = _infer_location_from_block(block)
-
-                # Disciplina
-                disciplina = inferir_disciplina(title)
-
-                # Duplicados por link canonicalizado
-                if any(_canon_link(ev["link"]) == link for ev in events):
-                    print(f"🔁 Duplicado saltado: {title} ({link})")
-                    continue
-
-                events.append({
-                    "fuente": "AgendaGijon",
-                    "evento": title,
-                    "fecha": fecha_dt,
-                    "hora": hora_text,
-                    "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar_texto)}", "{lugar_texto}")',
-                    "link": link,
-                    "disciplina": disciplina
-                })
-                print(f"  ➕ {title} @ {hora_text} / {lugar_texto}")
-
-            except Exception as ex:
-                print(f"⚠️ Item malformado saltado: {ex}")
+            data = r.json()
+            if not isinstance(data, dict) or data.get("status") not in ("GOOD", "OK"):
+                print(f"⚠️ Día {day.date()}: respuesta inesperada -> {str(data)[:120]}")
                 continue
 
-        # Pequeño respiro entre días para no disparar el WAF
-        time.sleep(0.8)
+            items = data.get("json", []) or []
+            day_html = data.get("html", "") or ""
+            loc_by_id = _parse_locations_by_event_id(day_html)
+
+            for it in items:
+                try:
+                    eid = str(it.get("event_id") or it.get("ID") or "").strip()
+                    title = it.get("event_title") or "Sin título"
+
+                    ts = it.get("event_start_unix") or it.get("unix_start")
+                    if not ts:
+                        # si no tenemos timestamp, saltamos
+                        continue
+                    ts = int(ts)
+                    fecha_evento = datetime.fromtimestamp(ts, tz=TZI)
+                    hora_text = fecha_evento.strftime("%H:%M")
+
+                    # Link: primero exlink, si no, URL propia del evento
+                    evpmv = it.get("event_pmv", {}) or {}
+                    exlink = _list_to_val(evpmv.get("evcal_exlink"))
+                    if isinstance(exlink, str) and exlink.strip():
+                        link = exlink.strip()
+                    else:
+                        link = _fallback_event_url_from_html(day_html, eid) or BASE + "/"
+
+                    # Localización (nombre + dirección si está)
+                    location_text = loc_by_id.get(eid) or "Gijón"
+
+                    # Disciplina según tu heurística existente
+                    try:
+                        disciplina = inferir_disciplina(title)
+                    except Exception:
+                        disciplina = ""
+
+                    # Duplicados por link (siguiendo tu criterio actual)
+                    if link and any(ev["link"] == link for ev in events):
+                        print(f"🔁 Evento duplicado saltado: {title}")
+                        continue
+
+                    events.append({
+                        "fuente": "AgendaGijon",
+                        "evento": title,
+                        "fecha": fecha_evento,
+                        "hora": hora_text,
+                        "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={requests.utils.quote(location_text)}", "{location_text}")',
+                        "link": link,
+                        "disciplina": disciplina
+                    })
+
+                    print(f"✅ [Gijón] {title} -> {fecha_evento} {hora_text}")
+                except Exception as e:
+                    print(f"⚠️ Error parseando evento: {e}")
+
+    except requests.HTTPError as e:
+        print(f"❌ HTTP error Agenda Gijón: {e}")
+    except Exception as e:
+        print(f"❌ Error Agenda Gijón: {e}")
 
     print(f"🎉 Total eventos Agenda Gijón: {len(events)}")
     return events
