@@ -1689,11 +1689,10 @@ def get_events_jarascada(months_ahead=2, only_future=True, offline_path=None):
     return events
 
 # --------------------------
-# Scraping Agenda Gijón (EventON) - 7 días vista (REST + admin-ajax en contexto navegador)
+# Scraping Agenda Gijón (EventON) - 7 días vista (solo Selenium, paso de día robusto)
 # --------------------------
 def get_events_agenda_gijon(days_ahead=7):
     BASE = "https://agendagijon.com"
-    AJAX = f"{BASE}/wp-admin/admin-ajax.php"
 
     # TZ Madrid si está disponible
     try:
@@ -1701,344 +1700,283 @@ def get_events_agenda_gijon(days_ahead=7):
     except Exception:
         TZI = None
 
-    def _onedayplus_bounds(d: datetime) -> tuple[int, int]:
-        # ventana onedayplus: 10:00 del día anterior -> 09:59:59 del día d (hora local)
-        if TZI:
-            start = (datetime(d.year, d.month, d.day, 10, 0, 0, tzinfo=TZI) - timedelta(days=1))
-            end = datetime(d.year, d.month, d.day, 9, 59, 59, tzinfo=TZI)
-        else:
-            start = datetime(d.year, d.month, d.day, 10, 0, 0) - timedelta(days=1)
-            end = datetime(d.year, d.month, d.day, 9, 59, 59)
-        return int(start.timestamp()), int(end.timestamp())
+    def _parse_start_dt_from_box(box):
+        """
+        Intenta sacar la fecha/hora de inicio del evento desde:
+        1) <meta itemprop="startDate" content="...">
+        2) <script type="application/ld+json"> ... "startDate": "..." ...
+        Devuelve datetime (aware si TZI) o None.
+        """
+        # 1) meta
+        meta = box.select_one('meta[itemprop="startDate"]')
+        dt_str = meta.get("content") if meta else None
 
-    def _extract_nonce_and_sc(html: str):
-        postnonce = ""
-        sc = {}
-        m = re.search(r"var the_ajax_script\s*=\s*(\{.*?\});", html, re.S)
-        if m:
+        # 2) JSON-LD
+        if not dt_str:
+            for s in box.select('script[type="application/ld+json"]'):
+                try:
+                    j = json.loads(s.string or "{}")
+                    if isinstance(j, dict) and j.get("startDate"):
+                        dt_str = j["startDate"]
+                        break
+                except Exception:
+                    pass
+
+        if not dt_str:
+            return None
+
+        # Normaliza "+0:00" -> "+00:00" para fromisoformat
+        if "+0:00" in dt_str:
+            dt_str = dt_str.replace("+0:00", "+00:00")
+
+        # Intenta parsear
+        try:
+            dt = parser.parse(dt_str)  # robusto
+        except Exception:
             try:
-                d = json.loads(m.group(1))
-                postnonce = d.get("postnonce") or ""
+                dt = datetime.fromisoformat(dt_str)
+            except Exception:
+                return None
+
+        # Si no lleva tz, asignamos Madrid si la tenemos
+        if dt.tzinfo is None and TZI:
+            dt = dt.replace(tzinfo=TZI)
+        return dt
+
+    def _collect_from_dom(driver, debug_label=""):
+        """
+        Lee todos los eventos visibles del día actual en el calendario
+        y devuelve lista de dicts con tu formato.
+        """
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        boxes = soup.select("#evcal_list .eventon_list_event")
+        events_day = []
+
+        # Intentamos inferir el año “visible” desde la cabecera (por si hiciera falta fallback)
+        year_visible = datetime.now().year
+        head = soup.select_one(".evo_month_title")
+        if head:
+            # ejemplo: "agosto, 2025"
+            try:
+                lbl = head.get_text(" ", strip=True)
+                ydt = dateparser.parse(f"1 {lbl}", languages=["es"])
+                if ydt:
+                    year_visible = ydt.year
             except Exception:
                 pass
-        soup = BeautifulSoup(html, "html.parser")
-        cal_data = soup.select_one(".evo_cal_data")
-        if cal_data and cal_data.has_attr("data-sc"):
-            try:
-                sc = json.loads(cal_data["data-sc"])
-            except Exception:
-                sc = {}
-        if not sc:
-            sc = {
-                "calendar_type": "daily",
-                "dv_view_style": "onedayplus",
-                "event_status": "all",
-                "event_past_future": "all",
-                "event_order": "ASC",
-                "show_repeats": "no",
-                "show_limit_paged": "1",
-                "lang": "L1",
-                "_cver": "4.5.9",
-            }
-        return postnonce, sc
 
-    def _parse_day_html(day_html: str):
-        urls, locs = {}, {}
-        soup = BeautifulSoup(day_html or "", "html.parser")
-        for box in soup.select("div.eventon_list_event"):
-            eid = box.get("data-event_id")
-            if not eid:
-                bid = box.get("id", "")
-                m = re.search(r"event_(\d+)_", bid)
-                eid = m.group(1) if m else None
-            if not eid:
-                continue
-            # URL prioriza JSON-LD
-            found = None
+        for box in boxes:
+            # Título
+            title_el = box.select_one(".evcal_event_title")
+            title = title_el.get_text(" ", strip=True) if title_el else "Sin título"
+
+            # Link (prefiere JSON-LD)
+            link = None
             for s in box.select('script[type="application/ld+json"]'):
                 try:
                     j = json.loads(s.string or "{}")
                     if isinstance(j, dict) and j.get("url"):
-                        found = j["url"]; break
+                        link = j["url"]; break
                 except Exception:
                     pass
-            if not found:
+            if not link:
                 a = box.select_one("a[href]")
-                if a: found = a.get("href")
-            if found: urls[str(eid)] = found
+                if a:
+                    link = a.get("href")
+            if not link:
+                link = BASE + "/"
 
             # Localización
             attrs = box.select_one(".event_location_attrs")
             if attrs:
                 name = attrs.get("data-location_name") or ""
                 addr = attrs.get("data-location_address") or ""
-                loc_txt = f"{name}, {addr}".strip().strip(", ")
+                location_text = f"{name}, {addr}".strip().strip(", ")
             else:
                 name_el = box.select_one(".event_location_name")
                 name = name_el.get_text(" ", strip=True) if name_el else ""
                 full_loc = box.select_one(".evoet_location")
-                loc_txt = (full_loc.get_text(" ", strip=True) if full_loc else "") or name or "Gijón"
-            locs[str(eid)] = loc_txt or "Gijón"
-        return urls, locs
+                location_text = (full_loc.get_text(" ", strip=True) if full_loc else "") or name or "Gijón"
 
-    def _build_event(it, urls_by_id, locs_by_id):
-        eid = str(it.get("event_id") or it.get("ID") or "").strip()
-        title = it.get("event_title") or "Sin título"
-
-        ts = it.get("event_start_unix") or it.get("unix_start")
-        if not ts:
-            return None
-        dt = datetime.fromtimestamp(int(ts), tz=TZI) if TZI else datetime.fromtimestamp(int(ts))
-        hora = dt.strftime("%H:%M")
-
-        pmv = it.get("event_pmv", {}) or {}
-        exlink = pmv.get("evcal_exlink")
-        if isinstance(exlink, list) and exlink:
-            exlink = exlink[0]
-        link = (exlink or "").strip() or urls_by_id.get(eid) or BASE + "/"
-
-        location_text = locs_by_id.get(eid) or "Gijón"
-        try:
-            disciplina = inferir_disciplina(title)
-        except Exception:
-            disciplina = ""
-
-        return {
-            "fuente": "AgendaGijon",
-            "evento": title,
-            "fecha": dt,
-            "hora": hora,
-            "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location_text)}", "{location_text}")',
-            "link": link,
-            "disciplina": disciplina
-        }
-
-    # ---------- 1) Intento admin-ajax directo (desde servidor) ----------
-    events = []
-    sess = requests.Session()
-    sess.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        "Accept": "*/*",
-        "Accept-Language": "es-ES,es;q=0.9",
-        "Referer": BASE + "/",
-        "Origin": BASE,
-        "X-Requested-With": "XMLHttpRequest",
-        "Cache-Control": "no-cache",
-    })
-    try:
-        sess.cookies.set("cookie_notice_accepted", "true", domain="agendagijon.com", path="/")
-    except Exception:
-        pass
-
-    try:
-        r0 = sess.get(BASE, timeout=25)
-        r0.raise_for_status()
-        postnonce, sc_tpl = _extract_nonce_and_sc(r0.text)
-        if postnonce:
-            today = datetime.now(TZI).date() if TZI else datetime.now().date()
-            for i in range(int(days_ahead)):
-                day = datetime(today.year, today.month, today.day) + timedelta(days=i)
-                su, eu = _onedayplus_bounds(day)
-
-                sc = sc_tpl.copy()
-                sc.update({
-                    "calendar_type": "daily",
-                    "fixed_day": str(day.day),
-                    "fixed_month": str(day.month),
-                    "fixed_year": str(day.year),
-                    "focus_start_date_range": str(su),
-                    "focus_end_date_range": str(eu),
-                })
-
-                payload = {
-                    "action": "the_ajax_ev_cal",
-                    "ajaxtype": "dv_newday",
-                    "direction": "none",
-                    "nonce": postnonce,
-                    "postnonce": postnonce,
-                }
-                payload.update({f"shortcode[{k}]": v for k, v in sc.items()})
-
-                r = sess.post(AJAX, data=payload, timeout=30,
-                              headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"})
-                txt = (r.text or "").strip()
-                if r.status_code >= 400 or txt == "0":
-                    print(f"⚠️ Gijón {day.date()} HTTP {r.status_code} -> {txt[:120]}")
-                    continue
-
+            # Fecha/hora (preferente desde JSON-LD/meta)
+            dt = _parse_start_dt_from_box(box)
+            hora = ""
+            if not dt:
+                # Fallback: día y mes de la “tarjeta” + año visible
                 try:
-                    data = r.json()
+                    d_el = box.select_one(".evo_start .date")
+                    m_el = box.select_one(".evo_start .month")
+                    dd = int(d_el.get_text(strip=True)) if d_el else datetime.now().day
+                    mm = (m_el.get_text(strip=True) if m_el else "")
+                    dt = dateparser.parse(f"{dd} {mm} {year_visible}", languages=["es"]) or datetime.now()
                 except Exception:
-                    try:
-                        data = json.loads(txt)
-                    except Exception:
-                        print(f"⚠️ {day.date()} respuesta no JSON")
-                        continue
+                    dt = datetime.now()
+                # Hora de la tarjeta
+                t_el = box.select_one(".evo_start .time")
+                hora = t_el.get_text(strip=True) if t_el else ""
+                if TZI and dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=TZI)
+            else:
+                # Hora desde dt real
+                hora = (dt.astimezone(TZI) if (TZI and dt.tzinfo) else dt).strftime("%H:%M")
 
-                if not isinstance(data, dict) or data.get("status") not in ("GOOD", "OK"):
-                    print(f"⚠️ {day.date()} respuesta inesperada: {str(data)[:160]}")
-                    continue
+            # Disciplina
+            try:
+                disciplina = inferir_disciplina(title)
+            except Exception:
+                disciplina = ""
 
-                items = data.get("json", []) or []
-                day_html = data.get("html", "") or ""
-                urls_by_id, locs_by_id = _parse_day_html(day_html)
+            events_day.append({
+                "fuente": "AgendaGijon",
+                "evento": title,
+                "fecha": dt,
+                "hora": hora,
+                "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location_text)}", "{location_text}")',
+                "link": link,
+                "disciplina": disciplina
+            })
 
-                for it in items:
-                    ev = _build_event(it, urls_by_id, locs_by_id)
-                    if ev and not any(e["link"] == ev["link"] for e in events):
-                        events.append(ev)
-    except Exception as e:
-        print(f"❌ Error inicial (nonce/sc): {e}")
+        if debug_label:
+            print(f"✅ {debug_label}: {len(events_day)} eventos leídos del DOM")
 
-    # ---------- 2) Fallback Selenium: REST con X-WP-Nonce; si falla, admin-ajax en página ----------
-    if not events:
-        print("ℹ️ Fallback Selenium (admin-ajax bloqueado o devolviendo '0').")
-        driver = get_selenium_driver(headless=True)
+        return events_day
+
+    def _wait_events_loaded(driver, timeout=12):
+        """
+        Espera a que el listado tenga *algún* evento cargado (tras el AJAX inicial).
+        """
         try:
-            driver.get(BASE)
-            # acepta cookies
+            WebDriverWait(driver, timeout).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "#evcal_list .eventon_list_event"))
+            )
+            return True
+        except Exception:
+            return False
+
+    def _goto_next_day_and_wait(driver, target_date):
+        """
+        Clic en 'siguiente' y espera cambio real.
+        Intentamos:
+          A) Detectar un startDate que empiece por YYYY-M-DT... o YYYY-MM-DDT...
+          B) Si no, esperamos a que cambie el innerHTML del listado.
+        """
+        # Prefijos de fecha a buscar en meta/script
+        pref1 = f"{target_date.year}-{target_date.month}-{target_date.day}T"
+        pref2 = f"{target_date.year}-{target_date.month:02d}-{target_date.day:02d}T"
+
+        # HTML previo para fallback
+        try:
+            prev_html = driver.find_element(By.ID, "evcal_list").get_attribute("innerHTML")
+        except Exception:
+            prev_html = None
+
+        # Click con JS (más fiable que .click() si hay overlays)
+        try:
+            nxt = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.ID, "evcal_next"))
+            )
+            driver.execute_script("arguments[0].click();", nxt)
+        except Exception:
+            # Intento por ID directo
             try:
-                WebDriverWait(driver, 5).until(
-                    EC.element_to_be_clickable((By.ID, "cn-accept-cookie"))
-                ).click()
-                time.sleep(0.2)
+                driver.execute_script("document.getElementById('evcal_next')?.click();")
             except Exception:
                 pass
 
-            # Capturamos nonces/SC desde el DOM
-            page_html = driver.page_source
-            postnonce, sc_tpl = _extract_nonce_and_sc(page_html)
-
-            # nonce REST de EventON (mismo valor que vimos en la página)
-            evo_nonce = None
+        # Espera A: ver si aparecen metas con el día objetivo
+        def _has_target_date(driver):
             try:
-                evo_nonce = driver.execute_script("return (window.evo_general_params && window.evo_general_params.n) || null;")
-            except Exception:
-                evo_nonce = None
-            if not evo_nonce:
-                evo_nonce = postnonce  # por si coincide
-
-            today = datetime.now(TZI).date() if TZI else datetime.now().date()
-            for i in range(int(days_ahead)):
-                day = datetime(today.year, today.month, today.day) + timedelta(days=i)
-                su, eu = _onedayplus_bounds(day)
-
-                sc = sc_tpl.copy()
-                sc.update({
-                    "calendar_type": "daily",
-                    "fixed_day": str(day.day),
-                    "fixed_month": str(day.month),
-                    "fixed_year": str(day.year),
-                    "focus_start_date_range": str(su),
-                    "focus_end_date_range": str(eu),
-                })
-
-                # 2A) REST con X-WP-Nonce
-                js_rest = """
-                const done = arguments[0];
-                (async function(){
-                  try{
-                    const gp = window.evo_general_params || {};
-                    const restBase = (gp.rest_url || '').replace('%%endpoint%%','dv_newday') || '/wp-json/eventon/v1/data?evo-ajax=dv_newday';
-                    const nonce = %s;
-                    const postnonce = %s;
-                    const sc = %s;
-                    const body = new URLSearchParams();
-                    // Aunque sea REST, este endpoint acepta form-urlencoded
-                    body.set('action','the_ajax_ev_cal');
-                    body.set('ajaxtype','dv_newday');
-                    body.set('direction','none');
-                    body.set('nonce', nonce);
-                    body.set('postnonce', postnonce);
-                    for (const [k,v] of Object.entries(sc)) body.set('shortcode['+k+']', String(v));
-                    const res = await fetch(restBase, {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8',
-                        'X-WP-Nonce': nonce,
-                        'X-Requested-With': 'XMLHttpRequest'
-                      },
-                      body
-                    });
-                    const text = await res.text();
-                    done(text);
-                  }catch(e){
-                    done(JSON.stringify({status:'ERR', error: String(e)}));
-                  }
-                })();
-                """ % (json.dumps(evo_nonce), json.dumps(postnonce), json.dumps(sc))
-
-                txt = (driver.execute_async_script(js_rest) or "").strip()
-
-                def _try_parse(s):
+                # Busca metas
+                metas = driver.find_elements(By.CSS_SELECTOR, "div.eventon_list_event meta[itemprop='startDate']")
+                for m in metas:
+                    c = m.get_attribute("content") or ""
+                    if c.startswith(pref1) or c.startswith(pref2):
+                        return True
+                # Busca en scripts JSON-LD
+                scripts = driver.find_elements(By.CSS_SELECTOR, "div.eventon_list_event script[type='application/ld+json']")
+                for s in scripts:
                     try:
-                        return json.loads(s)
+                        j = json.loads(s.get_attribute("innerText") or "{}")
+                        sd = j.get("startDate") if isinstance(j, dict) else None
+                        if isinstance(sd, str) and (sd.startswith(pref1) or sd.startswith(pref2)):
+                            return True
                     except Exception:
-                        return None
-
-                data = _try_parse(txt)
-
-                # 2B) Si REST no devuelve OK, probamos admin-ajax desde la propia página
-                if not isinstance(data, dict) or data.get("status") not in ("GOOD", "OK"):
-                    js_ajax = """
-                    const done = arguments[0];
-                    (async function(){
-                      try{
-                        const ta = window.the_ajax_script || {};
-                        const ajaxurl = ta.ajaxurl || '/wp-admin/admin-ajax.php';
-                        const postnonce = %s;
-                        const sc = %s;
-                        const body = new URLSearchParams();
-                        body.set('action','the_ajax_ev_cal');
-                        body.set('ajaxtype','dv_newday');
-                        body.set('direction','none');
-                        body.set('nonce', postnonce);
-                        body.set('postnonce', postnonce);
-                        for (const [k,v] of Object.entries(sc)) body.set('shortcode['+k+']', String(v));
-                        const res = await fetch(ajaxurl, {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8',
-                            'X-Requested-With': 'XMLHttpRequest'
-                          },
-                          body
-                        });
-                        const text = await res.text();
-                        done(text);
-                      }catch(e){
-                        done(JSON.stringify({status:'ERR', error: String(e)}));
-                      }
-                    })();
-                    """ % (json.dumps(postnonce), json.dumps(sc))
-
-                    txt = (driver.execute_async_script(js_ajax) or "").strip()
-                    data = _try_parse(txt)
-
-                if not isinstance(data, dict) or data.get("status") not in ("GOOD", "OK"):
-                    # log corto para depurar si sigue fallando
-                    short = (txt[:120] + '...') if isinstance(txt, str) else str(data)[:120]
-                    print(f"⚠️ {day.date()} respuesta inesperada Selenium: {short}")
-                    continue
-
-                items = data.get("json", []) or []
-                day_html = data.get("html", "") or ""
-                urls_by_id, locs_by_id = _parse_day_html(day_html)
-
-                for it in items:
-                    ev = _build_event(it, urls_by_id, locs_by_id)
-                    if ev and not any(e["link"] == ev["link"] for e in events):
-                        events.append(ev)
-        finally:
-            try:
-                driver.quit()
+                        pass
+                return False
             except Exception:
-                pass
+                return False
 
-    # ---------- dedupe final ----------
+        changed = False
+        try:
+            WebDriverWait(driver, 7).until(_has_target_date)
+            changed = True
+        except Exception:
+            # Espera B: cambia el innerHTML del listado
+            if prev_html is not None:
+                try:
+                    WebDriverWait(driver, 6).until(
+                        lambda d: d.find_element(By.ID, "evcal_list").get_attribute("innerHTML") != prev_html
+                    )
+                    changed = True
+                except Exception:
+                    changed = False
+
+        if not changed:
+            print("⚠️ La vista no cambió tras 'siguiente'")
+        return changed
+
+    events = []
+    driver = get_selenium_driver(headless=True)
+    try:
+        driver.get(BASE)
+
+        # Acepta cookies si aparece
+        try:
+            WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.ID, "cn-accept-cookie"))
+            ).click()
+            time.sleep(0.2)
+        except Exception:
+            pass
+
+        # Espera a que carguen los eventos del día actual
+        _wait_events_loaded(driver, timeout=12)
+        today = (datetime.now(TZI).date() if TZI else datetime.now().date())
+
+        # Recorremos días
+        for i in range(int(days_ahead)):
+            target = today + timedelta(days=i)
+
+            # Si no es el primer día, navega al siguiente y espera cambio
+            if i > 0:
+                _goto_next_day_and_wait(driver, target)
+
+            # Asegura que el listado del día está cargado
+            _wait_events_loaded(driver, timeout=8)
+
+            # Recolecta del DOM
+            day_events = _collect_from_dom(driver, debug_label=str(target))
+
+            # Dedupe por link
+            for ev in day_events:
+                lk = ev.get("link")
+                if lk and any(e["link"] == lk for e in events):
+                    continue
+                events.append(ev)
+
+    except Exception as e:
+        print(f"❌ Error en Agenda Gijón (Selenium): {e}")
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
+
+    # Dedupe final (por si acaso)
     uniq, seen = [], set()
     for ev in events:
         k = ev.get("link") or (ev.get("evento"), ev.get("fecha"))
-        if k in seen: 
+        if k in seen:
             continue
         seen.add(k)
         uniq.append(ev)
