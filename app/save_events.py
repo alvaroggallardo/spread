@@ -69,7 +69,7 @@ def guardar_eventos(scrapers=None):
         ]
 
         scrapers = [
-            # get_events_gijon,
+            get_events_gijon,
             # get_events_oviedo,
             # get_events_mieres,
             # get_events_asturiescultura,
