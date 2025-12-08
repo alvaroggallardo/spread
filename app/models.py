@@ -7,7 +7,7 @@ PG_CONNECTION_URL = os.getenv(
     "postgres://postgres:z8hs_J5VCEInzE~yM4~o4sM86wtvwfVh@shortline.proxy.rlwy.net:46990/railway"
 )
 
-DATABASE_URL = PG_CONNECTION_URL
+DATABASE_URL = PG_CONNECTION_URL.replace("postgres://", "postgresql://")
 
 Base = declarative_base()
 engine = create_engine(DATABASE_URL)
