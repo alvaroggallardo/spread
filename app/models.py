@@ -1,21 +1,13 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Definimos conexión con PostgreSQL y fallback a SQLite si no está configurado
-PG_CONNECTION_URL = (
-    "postgresql://postgres:BMibUSldVwNseRpYBDxjvplFspYjojrq"
-    "@interchange.proxy.rlwy.net:52229/railway"
+PG_CONNECTION_URL = os.getenv(
+    "DATABASE_URL",
+    "postgres://postgres:z8hs_J5VCEInzE~yM4~o4sM86wtvwfVh@shortline.proxy.rlwy.net:46990/railway"
 )
 
-# Si está configurada la variable de entorno DATABASE_URL, úsala. Si no, usa la URL fija. Si tampoco, SQLite
-DATABASE_URL = os.getenv("DATABASE_URL", PG_CONNECTION_URL)
-
-if not DATABASE_URL:
-    print("⚠️ No se encontró DATABASE_URL, usando SQLite sin persistencia.")
-    DATABASE_URL = "sqlite:///eventos.db"
-
-print(f"✅ Usando base de datos: {DATABASE_URL}")
+DATABASE_URL = PG_CONNECTION_URL
 
 Base = declarative_base()
 engine = create_engine(DATABASE_URL)
@@ -36,5 +28,12 @@ class Evento(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    crear_columna_vector()
 
-
+def crear_columna_vector():
+    with engine.connect() as conn:
+        conn.execute(text("""
+            ALTER TABLE eventos
+            ADD COLUMN IF NOT EXISTS embedding vector(1536);
+        """))
+        conn.commit()
