@@ -10,10 +10,13 @@ from typing import List, Optional
 from app.models import Evento, SessionLocal, init_db
 from app.save_events import guardar_eventos
 from app.schemas import EventoSchema
+from app.model_supabase import SessionSupabase   # <-- AÑADIR ESTO
+
 from datetime import date
 import os
 import requests
 import time
+
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
