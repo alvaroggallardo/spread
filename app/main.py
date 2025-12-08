@@ -208,6 +208,16 @@ def scrap_get_friendly():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/test-supa")
+def test_supa():
+    try:
+        db = SessionSupabase()
+        result = db.execute("SELECT COUNT(*) FROM public.eventos;").scalar()
+        db.close()
+        return {"rows": result}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/debug", dependencies=[Depends(check_token)])
 def depurar_eventos():
     db = SessionLocal()
