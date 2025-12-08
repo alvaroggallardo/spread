@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 SUPABASE_URL = os.getenv(
     "SUPABASE_DB_URL",
-    "postgresql://postgres.tovzbqfuzafctjgtlass:msU0CWQPqpgzQHjZ@aws-1-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
+    "postgresql://postgres.tovzbqfuzafctjgtlass:msU0CWQPqpgzQHjZ@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
 )
 
 SUPABASE_URL = SUPABASE_URL.replace("postgres://", "postgresql://")
