@@ -2,9 +2,13 @@ import os
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
 
+# La URL debe venir desde Railway: SUPABASE_DB_URL
+# Ejemplo real desde Supabase (pooler IPv4):
+# postgresql://postgres.tovzbqfuzafctjgtlass:PASSWORD@aws-1-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true
+
 SUPABASE_URL = os.getenv(
     "SUPABASE_DB_URL",
-    "postgresql://postgres:msU0CWQPqpgzQHjZ@db.tovzbqfuzafctjgtlass.supabase.co:5432/postgres"
+    "postgresql://postgres.tovzbqfuzafctjgtlass:msU0CWQPqpgzQHjZ@aws-1-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
 )
 
 SUPABASE_URL = SUPABASE_URL.replace("postgres://", "postgresql://")
