@@ -73,7 +73,7 @@ def guardar_eventos(scrapers=None):
             # get_events_oviedo,
             # get_events_mieres,
             # get_events_asturiescultura,
-            # get_events_aviles,
+             get_events_aviles
             # get_events_siero,
             # get_events_conciertosclub,
             # lambda: get_events_turismoasturias(tematicas=tematicas),
@@ -85,7 +85,7 @@ def guardar_eventos(scrapers=None):
             # get_events_asturiasconvivencias,
             # get_events_gijon_umami,
             # get_events_asturias,
-            get_events_jarascada,
+            #get_events_jarascada,
             #get_events_agenda_gijon
         ]
 
