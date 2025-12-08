@@ -20,6 +20,8 @@ import time
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from sqlalchemy import text
+
 # ------------------------
 # CONFIGURACIONES
 # ------------------------
@@ -215,7 +217,7 @@ def scrap_get_friendly():
 def test_supa():
     try:
         db = SessionSupabase()
-        result = db.execute("SELECT COUNT(*) FROM public.eventos;").scalar()
+        result = db.execute(text("SELECT COUNT(*) FROM public.eventos;")).scalar()
         db.close()
         return {"rows": result}
     except Exception as e:
