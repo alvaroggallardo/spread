@@ -6,12 +6,12 @@ from sqlalchemy import func
 model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
 def build_text(ev):
-    """Genera un texto limpio para obtener mejor embedding."""
+    fecha = ev.fecha.strftime("%Y-%m-%d") if ev.fecha else ""
     partes = [
         ev.evento or "",
-        ev.disciplina or "",
-        ev.lugar or "",
-        str(ev.fecha) or "",
+        f"Disciplina: {ev.disciplina}" if ev.disciplina else "",
+        f"Lugar: {ev.lugar}" if ev.lugar else "",
+        f"Fecha: {fecha}",
     ]
     return " - ".join([p for p in partes if p])
 
