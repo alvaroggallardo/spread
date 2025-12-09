@@ -253,29 +253,33 @@ def buscar_semanticamente(q: str):
     db = SessionSupabase()
 
     try:
-        # 1. Embedding de la pregunta
-        vec = get_modelo().encode(q).tolist()
+        modelo = get_modelo()
 
-        # 2. Query semántica
-        sql = """
+        # 1. Embedding de la pregunta
+        vec = modelo.encode(q).tolist()
+
+        # 2. Convertir el vector en literal SQL correcto
+        vec_str = "[" + ",".join(str(v) for v in vec) + "]"
+
+        # 3. Query semántica correctamente casteada
+        sql = f"""
             SELECT id, evento, fecha, lugar, disciplina, link,
-                   embedding <-> (:vec::vector) AS distancia
+                   embedding <-> '{vec_str}'::vector AS distancia
             FROM eventos
-            ORDER BY embedding <-> (:vec::vector)
+            ORDER BY embedding <-> '{vec_str}'::vector
             LIMIT 10;
         """
 
-        rows = db.execute(text(sql), {"vec": vec}).mappings().all()
-
-        resultados = [dict(r) for r in rows]
+        rows = db.execute(text(sql)).mappings().all()
 
         return {
             "pregunta": q,
-            "resultados": resultados
+            "resultados": [dict(r) for r in rows]
         }
 
     finally:
         db.close()
+
     
 @app.get("/debug", dependencies=[Depends(check_token)])
 def depurar_eventos():
