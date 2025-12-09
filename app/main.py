@@ -259,9 +259,9 @@ def buscar_semanticamente(q: str):
         # 2. Query semántica
         sql = """
             SELECT id, evento, fecha, lugar, disciplina, link,
-                   embedding <-> :vec AS distancia
+                   embedding <-> (:vec::vector) AS distancia
             FROM eventos
-            ORDER BY embedding <-> :vec
+            ORDER BY embedding <-> (:vec::vector)
             LIMIT 10;
         """
 
