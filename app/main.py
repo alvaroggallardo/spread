@@ -226,9 +226,15 @@ def test_supa():
 
 @app.post("/generar-embeddings", dependencies=[Depends(check_token)])
 def generar_embeddings_api():
-    from app.embeddings import generar_embeddings
-    n = generar_embeddings()
-    return {"embeddings_generados": n}
+    try:
+        n = generar_embeddings()
+        return {"embeddings_generados": n}
+    except Exception as e:
+        import traceback
+        print("ERROR EN EMBEDDINGS:")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/debug", dependencies=[Depends(check_token)])
 def depurar_eventos():
