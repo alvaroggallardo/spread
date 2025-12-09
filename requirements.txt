@@ -14,3 +14,4 @@ apscheduler>=3.10
 sentence-transformers
 onnxruntime
 numpy
+pgvector
