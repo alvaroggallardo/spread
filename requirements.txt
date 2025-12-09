@@ -11,3 +11,6 @@ webdriver-manager
 psycopg2-binary
 ics
 apscheduler>=3.10
+sentence-transformers>=2.2.2
+torch==2.2.2+cpu
+numpy
