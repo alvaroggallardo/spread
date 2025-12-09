@@ -1,9 +1,8 @@
 import os
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.dialects.postgresql import ARRAY, DOUBLE_PRECISION
+from sqlalchemy.dialects.postgresql import JSONB
 
-# La URL debe venir desde Railway: SUPABASE_DB_URL
 SUPABASE_URL = os.getenv(
     "SUPABASE_DB_URL",
     "postgresql://postgres.tovzbqfuzafctjgtlass:msU0CWQPqpgzQHjZ@aws-1-eu-central-1.pooler.supabase.com:6543/tovzbqfuzafctjgtlass"
@@ -28,5 +27,5 @@ class EventoSupabase(BaseSupabase):
     link = Column(String)
     disciplina = Column(String)
 
-    # Nueva columna para embeddings
-    embedding = Column(ARRAY(DOUBLE_PRECISION))
+    # columna vectorial (solo para evitar crash, no para mapear tipo)
+    embedding = Column(JSONB)
