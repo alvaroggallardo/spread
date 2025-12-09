@@ -41,10 +41,16 @@ def interpretar_pregunta_grok(pregunta):
     # El contenido viene en:
     contenido = data["choices"][0]["message"]["content"]
 
-    try:
-        return json.loads(contenido)
-    except:
+    json_text = extraer_json(contenido)
+
+    if not json_text:
         return {"error": "JSON inválido", "raw": contenido}
+
+    try:
+        return json.loads(json_text)
+    except Exception as e:
+        return {"error": "JSON inválido", "detalle": str(e), "raw": json_text}
+
 
 
 def llamar_grok_para_respuesta(prompt):
