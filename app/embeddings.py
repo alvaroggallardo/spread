@@ -1,33 +1,59 @@
-import os
-import numpy as np
-from sentence_transformers import SentenceTransformer
-from sqlalchemy import text
 from app.model_supabase import SessionSupabase, EventoSupabase
+from sentence_transformers import SentenceTransformer
+from sqlalchemy import func
 
-# Modelo sin torch, funciona con ONNX automáticamente
+# Modelo MiniLM (384 dimensiones)
 model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-def generar_embeddings():
+def build_text(ev):
+    """Genera un texto limpio para obtener mejor embedding."""
+    partes = [
+        ev.evento or "",
+        ev.disciplina or "",
+        ev.lugar or "",
+        str(ev.fecha) or "",
+    ]
+    return " - ".join([p for p in partes if p])
+
+def generar_embeddings(chunk_size=25):
+    """Genera embeddings por lotes evitando timeouts en Railway."""
+    
     db = SessionSupabase()
 
+    # Obtener todos los eventos SIN EMBEDDING
     eventos = db.query(EventoSupabase).filter(EventoSupabase.embedding == None).all()
 
-    print("Eventos sin embedding:", len(eventos))
+    total = len(eventos)
+    if total == 0:
+        db.close()
+        return {"status": "no-new", "message": "No hay eventos pendientes"}
 
-    for ev in eventos:
-        texto = f"{ev.evento} {ev.lugar} {ev.disciplina}"
-        vector = model.encode(texto)
-        vector_list = vector.tolist()
+    print(f"🧠 Generando embeddings para {total} eventos...")
 
-        q = text("""
-            UPDATE public.eventos
-            SET embedding = :vec
-            WHERE id = :id
-        """)
+    procesados = 0
 
-        db.execute(q, {"vec": vector_list, "id": ev.id})
+    for i in range(0, total, chunk_size):
+        batch = eventos[i:i + chunk_size]
 
-    db.commit()
+        # Construir textos
+        textos = [build_text(ev) for ev in batch]
+
+        # Generar embeddings (lista de listas)
+        vectors = model.encode(textos).tolist()
+
+        # Guardar en cada evento
+        for ev, vec in zip(batch, vectors):
+            ev.embedding = vec  # JSONB → OK
+
+        db.commit()
+        procesados += len(batch)
+
+        print(f"✔ Lote {i//chunk_size + 1} procesado ({procesados}/{total})")
+
     db.close()
 
-    return len(eventos)
+    return {
+        "status": "ok",
+        "total_eventos": total,
+        "embeddings_generados": procesados
+    }
