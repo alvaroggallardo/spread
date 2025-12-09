@@ -19,8 +19,12 @@ from app.schemas import EventoSchema
 from app.model_supabase import SessionSupabase
 from app.embeddings import generar_embeddings
 
+from app.grok_intent import interpretar_pregunta_grok
+from sqlalchemy import and_
+
 from datetime import date
 import os
+import json
 import requests
 import time
 
@@ -280,6 +284,86 @@ def buscar_semanticamente(q: str):
     finally:
         db.close()
 
+    
+# ---------------------------
+# ENDPOINT CHAT FINAL
+# ---------------------------
+@app.get("/chat-eventos")
+def chat_eventos(q: str):
+    """Chat inteligente que usa Grok + PGVector."""
+
+    # 1. Interpretar intención
+    intent = interpretar_pregunta_grok(q)
+
+    if "error" in intent:
+        return {"error": "Grok no entendió la petición", "detalle": intent}
+
+    ciudad = intent.get("ciudad")
+    interior = intent.get("interior")
+    infantil = intent.get("infantil")
+    disciplina = intent.get("disciplina")
+    fecha_inicio = intent.get("fecha_inicio")
+    fecha_fin = intent.get("fecha_fin")
+
+    # 2. Filtros estructurados antes del vector search
+    db = SessionSupabase()
+    clauses = []
+
+    if disciplina:
+        clauses.append(text("disciplina ILIKE :disciplina"))
+    if ciudad:
+        clauses.append(text("lugar ILIKE :ciudad"))
+    if infantil:
+        clauses.append(text("disciplina ILIKE '%infantil%'"))
+    if interior is True:
+        clauses.append(text("lugar NOT ILIKE '%Parque%' AND lugar NOT ILIKE '%Playa%'"))
+    if fecha_inicio and fecha_fin:
+        clauses.append(text("fecha BETWEEN :fini AND :ffin"))
+
+    where_sql = ""
+    if clauses:
+        where_sql = "WHERE " + " AND ".join(str(c) for c in clauses)
+
+    # 3. Embedding semántico
+    vec = get_modelo().encode(q).tolist()
+    vec_str = "[" + ",".join(str(v) for v in vec) + "]"
+
+    sql = f"""
+        SELECT id, evento, fecha, lugar, disciplina, link,
+               embedding <-> '{vec_str}'::vector AS distancia
+        FROM eventos
+        {where_sql}
+        ORDER BY embedding <-> '{vec_str}'::vector
+        LIMIT 8;
+    """
+
+    params = {
+        "disciplina": f"%{disciplina}%" if disciplina else None,
+        "ciudad": f"%{ciudad}%" if ciudad else None,
+        "fini": fecha_inicio,
+        "ffin": fecha_fin,
+    }
+
+    rows = db.execute(text(sql), params).mappings().all()
+    db.close()
+
+    # 4. Preparar respuesta estilo chat
+    eventos_resumidos = [
+        {
+            "evento": r["evento"],
+            "fecha": str(r["fecha"]),
+            "lugar": r["lugar"],
+            "disciplina": r["disciplina"],
+            "link": r["link"]
+        }
+        for r in rows
+    ]
+
+    return {
+        "intencion_detectada": intent,
+        "resultados": eventos_resumidos,
+        "total_encontrados": len(eventos_resumidos),
+    }
     
 @app.get("/debug", dependencies=[Depends(check_token)])
 def depurar_eventos():
