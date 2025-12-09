@@ -1,11 +1,9 @@
 import os
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.dialects.postgresql import ARRAY, DOUBLE_PRECISION
 
 # La URL debe venir desde Railway: SUPABASE_DB_URL
-# Ejemplo real desde Supabase (pooler IPv4):
-# postgresql://postgres.tovzbqfuzafctjgtlass:PASSWORD@aws-1-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true
-
 SUPABASE_URL = os.getenv(
     "SUPABASE_DB_URL",
     "postgresql://postgres.tovzbqfuzafctjgtlass:msU0CWQPqpgzQHjZ@aws-1-eu-central-1.pooler.supabase.com:6543/tovzbqfuzafctjgtlass"
@@ -29,3 +27,6 @@ class EventoSupabase(BaseSupabase):
     lugar = Column(String)
     link = Column(String)
     disciplina = Column(String)
+
+    # Nueva columna para embeddings
+    embedding = Column(ARRAY(DOUBLE_PRECISION))
