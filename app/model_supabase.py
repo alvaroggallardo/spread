@@ -5,7 +5,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 SUPABASE_URL = os.getenv(
     "SUPABASE_DB_URL",
-    "postgresql://postgres.tovzbqfuzafctjgtlass:msU0CWQPqpgzQHjZ@aws-1-eu-central-1.pooler.supabase.com:6543/tovzbqfuzafctjgtlass"
+    "postgresql://postgres.xemfivtbqpmnzjhwsovj:msU0CWQPqpgzQHjZ@aws-1-eu-west-1.pooler.supabase.com:6543/postgres"
 )
 
 SUPABASE_URL = SUPABASE_URL.replace("postgres://", "postgresql://")
@@ -26,6 +26,4 @@ class EventoSupabase(BaseSupabase):
     lugar = Column(String)
     link = Column(String)
     disciplina = Column(String)
-
-    # columna vectorial (solo para evitar crash, no para mapear tipo)
-    embedding = Column(JSONB)
+    embedding = Column(JSONB)  # JSONB para embeddings
