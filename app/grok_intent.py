@@ -45,3 +45,26 @@ def interpretar_pregunta_grok(pregunta):
         return json.loads(contenido)
     except:
         return {"error": "JSON inválido", "raw": contenido}
+
+
+def llamar_grok_para_respuesta(prompt):
+    headers = {
+        "Authorization": f"Bearer {GROK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    body = {
+        "model": "grok-beta",
+        "messages": [
+            {"role": "system", "content": "Responde en lenguaje natural, elegante y claro."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.4
+    }
+
+    r = requests.post("https://api.x.ai/v1/chat/completions", headers=headers, json=body)
+
+    try:
+        return r.json()["choices"][0]["message"]["content"]
+    except:
+        return "⚠️ Error generando respuesta con Grok."

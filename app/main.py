@@ -20,6 +20,8 @@ from app.model_supabase import SessionSupabase
 from app.embeddings import generar_embeddings
 
 from app.grok_intent import interpretar_pregunta_grok
+from app.grok_intent import llamar_grok_para_respuesta
+
 from sqlalchemy import and_
 
 from datetime import date
@@ -295,11 +297,16 @@ def test_grok():
 # ---------------------------
 @app.get("/chat-eventos")
 def chat_eventos(q: str):
-    """Chat inteligente que usa Grok + PGVector."""
+    """
+    Chat inteligente:
+      1. Grok interpreta intención
+      2. SQL + Vector busca eventos relacionados
+      3. Grok genera respuesta natural para el usuario
+      4. Devuelve ambos: respuesta_llm + lista de eventos
+    """
 
-    # 1. Interpretar intención
+    # --- 1) Interpretar intención ---
     intent = interpretar_pregunta_grok(q)
-
     if "error" in intent:
         return {"error": "Grok no entendió la petición", "detalle": intent}
 
@@ -310,36 +317,35 @@ def chat_eventos(q: str):
     fecha_inicio = intent.get("fecha_inicio")
     fecha_fin = intent.get("fecha_fin")
 
-    # 2. Filtros estructurados antes del vector search
+    # --- 2) Construir SQL dinámico ---
     db = SessionSupabase()
     clauses = []
 
     if disciplina:
-        clauses.append(text("disciplina ILIKE :disciplina"))
+        clauses.append("disciplina ILIKE :disciplina")
     if ciudad:
-        clauses.append(text("lugar ILIKE :ciudad"))
+        clauses.append("lugar ILIKE :ciudad")
     if infantil:
-        clauses.append(text("disciplina ILIKE '%infantil%'"))
+        clauses.append("disciplina ILIKE '%infantil%'")
     if interior is True:
-        clauses.append(text("lugar NOT ILIKE '%Parque%' AND lugar NOT ILIKE '%Playa%'"))
+        clauses.append("lugar NOT ILIKE '%Parque%' AND lugar NOT ILIKE '%Playa%'")
     if fecha_inicio and fecha_fin:
-        clauses.append(text("fecha BETWEEN :fini AND :ffin"))
+        clauses.append("fecha BETWEEN :fini AND :ffin")
 
-    where_sql = ""
-    if clauses:
-        where_sql = "WHERE " + " AND ".join(str(c) for c in clauses)
+    where_sql = "WHERE " + " AND ".join(clauses) if clauses else ""
 
-    # 3. Embedding semántico
-    vec = get_modelo().encode(q).tolist()
+    # --- 3) Embedding del usuario ---
+    modelo = get_modelo()
+    vec = modelo.encode(q).tolist()
     vec_str = "[" + ",".join(str(v) for v in vec) + "]"
 
     sql = f"""
-        SELECT id, evento, fecha, lugar, disciplina, link,
+        SELECT id, evento, fecha, fecha_fin, lugar, disciplina, link,
                embedding <-> '{vec_str}'::vector AS distancia
         FROM eventos
         {where_sql}
         ORDER BY embedding <-> '{vec_str}'::vector
-        LIMIT 8;
+        LIMIT 6;
     """
 
     params = {
@@ -352,23 +358,38 @@ def chat_eventos(q: str):
     rows = db.execute(text(sql), params).mappings().all()
     db.close()
 
-    # 4. Preparar respuesta estilo chat
-    eventos_resumidos = [
-        {
-            "evento": r["evento"],
-            "fecha": str(r["fecha"]),
-            "lugar": r["lugar"],
-            "disciplina": r["disciplina"],
-            "link": r["link"]
+    if not rows:
+        return {
+            "respuesta_llm": "No encontré eventos que encajen con lo que estás buscando 🤷‍♂️",
+            "eventos": []
         }
-        for r in rows
-    ]
 
+    # --- 4) Preparar contexto para Grok ---
+    eventos_texto = "\n".join(
+        f"- {r['evento']} ({r['fecha']}) en {r['lugar']} [{r['disciplina']}]"
+        for r in rows
+    )
+
+    prompt = f"""
+El usuario pregunta: "{q}"
+
+Estos son los eventos encontrados:
+
+{eventos_texto}
+
+Genera una explicación breve y simpática recomendando los eventos.
+No inventes nada. Usa solo los eventos listados.
+"""
+
+    # --- 5) Respuesta final en lenguaje natural ---
+    respuesta_llm = llamar_grok_para_respuesta(prompt)
+
+    # --- 6) Devolver ambos ---
     return {
-        "intencion_detectada": intent,
-        "resultados": eventos_resumidos,
-        "total_encontrados": len(eventos_resumidos),
+        "respuesta_llm": respuesta_llm,
+        "eventos": rows,
     }
+
     
 @app.get("/debug", dependencies=[Depends(check_token)])
 def depurar_eventos():
