@@ -287,22 +287,26 @@ def buscar_semanticamente(q: str):
         db.close()
     
 # ---------------------------
-# ENDPOINT CHAT FINAL
+# ENDPOINT CHAT FINAL (OPTIMIZADO)
 # ---------------------------
 @app.get("/chat-eventos")
 def chat_eventos(q: str):
     """
     Chat inteligente:
       1. Grok interpreta intención
-      2. SQL + Vector busca eventos relacionados
-      3. Grok genera respuesta natural para el usuario
-      4. Devuelve ambos: respuesta_llm + lista de eventos
+      2. Búsqueda semántica con embeddings (motor principal)
+      3. Filtros suaves con SQL solo cuando procede
+      4. Grok redacta la respuesta
+      5. Devuelve: respuesta_llm + intención + eventos
     """
 
     # --- 1) Interpretar intención ---
     intent = interpretar_pregunta_grok(q)
     if "error" in intent:
-        return {"error": "Grok no entendió la petición", "detalle": intent}
+        return {
+            "error": "Grok no entendió la petición",
+            "detalle": intent
+        }
 
     ciudad = intent.get("ciudad")
     interior = intent.get("interior")
@@ -311,21 +315,37 @@ def chat_eventos(q: str):
     fecha_inicio = intent.get("fecha_inicio")
     fecha_fin = intent.get("fecha_fin")
 
-    # --- 2) Construir SQL dinámico ---
+    # --- DISCIPLINAS válidas en tu tabla ---
+    DISCIPLINAS_VALIDAS = [
+        "concierto", "música", "musica", "teatro", 
+        "cine", "exposición", "danza", "infantil"
+    ]
+
+    # --- 2) Construcción del WHERE (suave, no destructiva) ---
     db = SessionSupabase()
     clauses = []
 
-    if disciplina:
-        clauses.append("disciplina ILIKE :disciplina")
+    # Filtrar ciudad si viene
     if ciudad:
         clauses.append("lugar ILIKE :ciudad")
-    if infantil:
-        clauses.append("disciplina ILIKE '%infantil%'")
+
+    # Interior
     if interior is True:
-        clauses.append("lugar NOT ILIKE '%Parque%' AND lugar NOT ILIKE '%Playa%'")
+        clauses.append(
+            "lugar NOT ILIKE '%Parque%' "
+            "AND lugar NOT ILIKE '%Playa%' "
+            "AND lugar NOT ILIKE '%Explanada%'"
+        )
+
+    # Filtrar disciplina SOLO si coincide con valores reales de la BD
+    if disciplina and disciplina.lower() in DISCIPLINAS_VALIDAS:
+        clauses.append("disciplina ILIKE :disciplina")
+
+    # Fechas siempre son un filtro útil
     if fecha_inicio and fecha_fin:
         clauses.append("fecha BETWEEN :fini AND :ffin")
 
+    # WHERE final
     where_sql = "WHERE " + " AND ".join(clauses) if clauses else ""
 
     # --- 3) Embedding del usuario ---
@@ -333,18 +353,19 @@ def chat_eventos(q: str):
     vec = modelo.encode(q).tolist()
     vec_str = "[" + ",".join(str(v) for v in vec) + "]"
 
+    # --- 4) Query final ---
     sql = f"""
         SELECT id, evento, fecha, fecha_fin, lugar, disciplina, link,
                embedding <-> '{vec_str}'::vector AS distancia
         FROM eventos
         {where_sql}
         ORDER BY embedding <-> '{vec_str}'::vector
-        LIMIT 6;
+        LIMIT 8;
     """
 
     params = {
-        "disciplina": f"%{disciplina}%" if disciplina else None,
         "ciudad": f"%{ciudad}%" if ciudad else None,
+        "disciplina": f"%{disciplina}%" if disciplina and disciplina.lower() in DISCIPLINAS_VALIDAS else None,
         "fini": fecha_inicio,
         "ffin": fecha_fin,
     }
@@ -352,13 +373,28 @@ def chat_eventos(q: str):
     rows = db.execute(text(sql), params).mappings().all()
     db.close()
 
+    # Si aún así no hay resultados → hacer fallback a SEMÁNTICO SIN FILTROS
+    if not rows:
+        db = SessionSupabase()
+        sql_fallback = f"""
+            SELECT id, evento, fecha, fecha_fin, lugar, disciplina, link,
+                   embedding <-> '{vec_str}'::vector AS distancia
+            FROM eventos
+            ORDER BY embedding <-> '{vec_str}'::vector
+            LIMIT 8;
+        """
+        rows = db.execute(text(sql_fallback)).mappings().all()
+        db.close()
+
+    # Si tampoco encuentra nada → mensaje simple
     if not rows:
         return {
             "respuesta_llm": "No encontré eventos que encajen con lo que estás buscando 🤷‍♂️",
+            "intencion": intent,
             "eventos": []
         }
 
-    # --- 4) Preparar contexto para Grok ---
+    # --- 5) Preparar contexto para Grok ---
     eventos_texto = "\n".join(
         f"- {r['evento']} ({r['fecha']}) en {r['lugar']} [{r['disciplina']}]"
         for r in rows
@@ -367,22 +403,24 @@ def chat_eventos(q: str):
     prompt = f"""
 El usuario pregunta: "{q}"
 
-Estos son los eventos encontrados:
+Estos son los eventos más relevantes encontrados:
 
 {eventos_texto}
 
-Genera una explicación breve y simpática recomendando los eventos.
+Genera una explicación breve, simpática y clara recomendando los eventos.
 No inventes nada. Usa solo los eventos listados.
 """
 
-    # --- 5) Respuesta final en lenguaje natural ---
+    # --- 6) Respuesta final del modelo ---
     respuesta_llm = llamar_grok_para_respuesta(prompt)
 
-    # --- 6) Devolver ambos ---
+    # --- 7) Devolver todo ---
     return {
         "respuesta_llm": respuesta_llm,
+        "intencion": intent,
         "eventos": rows,
     }
+
 
     
 @app.get("/debug", dependencies=[Depends(check_token)])
