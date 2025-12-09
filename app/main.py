@@ -3,10 +3,16 @@ from fastapi.security import APIKeyHeader
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import APIRouter
 
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
+from sqlalchemy import text
+
+from sentence_transformers import SentenceTransformer
+
 from typing import List, Optional
+
 from app.models import Evento, SessionLocal, init_db
 from app.save_events import guardar_eventos
 from app.schemas import EventoSchema
@@ -21,8 +27,6 @@ import time
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from sqlalchemy import text
-
 # ------------------------
 # CONFIGURACIONES
 # ------------------------
@@ -32,6 +36,17 @@ API_TOKEN = os.getenv("MY_API_TOKEN", "")
 
 # URL de Railway a la que quieres llamar desde tu proxy
 RAILWAY_EVENTOS_URL = "https://spread-production-b053.up.railway.app/eventos"
+
+router = APIRouter()
+
+modelo = None
+
+def get_modelo():
+    global modelo
+    if modelo is None:
+        modelo = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    return modelo
+
 
 # ------------------------
 # SEGURIDAD
@@ -83,6 +98,7 @@ def custom_openapi():
 
 app = FastAPI()
 app.openapi = custom_openapi
+app.include_router(router)
 
 # ------------------------
 # CRON 
@@ -232,7 +248,35 @@ def generar_embeddings_endpoint():
     except Exception as e:
         return {"error": str(e)}
 
+@router.get("/buscar-semanticamente")
+def buscar_semanticamente(q: str):
+    db = SessionSupabase()
 
+    try:
+        # 1. Embedding de la pregunta
+        vec = get_modelo().encode(q).tolist()
+
+        # 2. Query semántica
+        sql = """
+            SELECT id, evento, fecha, lugar, disciplina, link,
+                   embedding <-> :vec AS distancia
+            FROM eventos
+            ORDER BY embedding <-> :vec
+            LIMIT 10;
+        """
+
+        rows = db.execute(text(sql), {"vec": vec}).mappings().all()
+
+        resultados = [dict(r) for r in rows]
+
+        return {
+            "pregunta": q,
+            "resultados": resultados
+        }
+
+    finally:
+        db.close()
+    
 @app.get("/debug", dependencies=[Depends(check_token)])
 def depurar_eventos():
     db = SessionLocal()
