@@ -285,12 +285,6 @@ def buscar_semanticamente(q: str):
 
     finally:
         db.close()
-
-@app.get("/test-grok")
-def test_grok():
-    from app.grok_intent import GROK_API_KEY
-    return {"grok_key": GROK_API_KEY, "is_none": GROK_API_KEY is None}
-
     
 # ---------------------------
 # ENDPOINT CHAT FINAL

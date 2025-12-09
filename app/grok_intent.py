@@ -1,6 +1,29 @@
 import os
+import re
+import json
 import requests
 
+
+# ----------------------------------------------------
+#   EXTRACTOR DE JSON — IMPRESCINDIBLE PARA GROK
+# ----------------------------------------------------
+def extraer_json(texto):
+    # 1) Detecta bloque ```json ... ```
+    m = re.search(r"```json\s*(\{.*?\})\s*```", texto, re.DOTALL)
+    if m:
+        return m.group(1)
+
+    # 2) Detecta cualquier bloque { ... }
+    m = re.search(r"(\{.*\})", texto, re.DOTALL)
+    if m:
+        return m.group(1)
+
+    return None
+
+
+# ----------------------------------------------------
+#   PARSER DE INTENCIÓN
+# ----------------------------------------------------
 def interpretar_pregunta_grok(pregunta):
     key = os.getenv("GROK_API_KEY")
 
@@ -10,14 +33,14 @@ def interpretar_pregunta_grok(pregunta):
     }
 
     body = {
-        "model": "grok-4-latest",    # modelo correcto ✔
+        "model": "grok-4-latest",
         "messages": [
             {
                 "role": "system",
                 "content": (
                     "Eres un parser que convierte una consulta humana en un JSON "
                     "con los campos: ciudad, interior, infantil, disciplina, fecha_inicio, fecha_fin. "
-                    "NO respondas nada más."
+                    "NO respondas nada más. Devuelve SOLO JSON válido."
                 )
             },
             {"role": "user", "content": pregunta}
@@ -34,13 +57,13 @@ def interpretar_pregunta_grok(pregunta):
 
     try:
         r.raise_for_status()
-    except Exception as e:
+    except Exception:
         return {"error": "Grok error", "http_status": r.status_code, "body": r.text}
 
     data = r.json()
-    # El contenido viene en:
     contenido = data["choices"][0]["message"]["content"]
 
+    # Extraer JSON
     json_text = extraer_json(contenido)
 
     if not json_text:
@@ -52,10 +75,14 @@ def interpretar_pregunta_grok(pregunta):
         return {"error": "JSON inválido", "detalle": str(e), "raw": json_text}
 
 
-
+# ----------------------------------------------------
+#   GENERADOR DE RESPUESTA NATURAL
+# ----------------------------------------------------
 def llamar_grok_para_respuesta(prompt):
+    key = os.getenv("GROK_API_KEY")
+
     headers = {
-        "Authorization": f"Bearer {GROK_API_KEY}",
+        "Authorization": f"Bearer {key}",
         "Content-Type": "application/json"
     }
 
