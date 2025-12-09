@@ -5,7 +5,7 @@ from sqlalchemy import func
 # Modelo MiniLM (384 dimensiones)
 # model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2") al tener poca concreción temática de disciplinas no entendia la pregunta
 
-modelo = SentenceTransformer("sentence-transformers/multi-qa-MiniLM-L6-cos-v1")
+model = SentenceTransformer("sentence-transformers/multi-qa-MiniLM-L6-cos-v1")
 
 def build_text(ev):
     fecha = ev.fecha.strftime("%Y-%m-%d") if ev.fecha else ""
