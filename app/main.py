@@ -27,6 +27,7 @@ import time
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
+
 # ------------------------
 # CONFIGURACIONES
 # ------------------------
@@ -98,7 +99,6 @@ def custom_openapi():
 
 app = FastAPI()
 app.openapi = custom_openapi
-app.include_router(router)
 
 # ------------------------
 # CRON 
@@ -329,6 +329,8 @@ def proxy_eventos():
         return res.json()
     except requests.RequestException as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+app.include_router(router)
 
 # ✅ Entrada principal para Railway y local
 if __name__ == "__main__":
