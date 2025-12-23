@@ -162,7 +162,14 @@ def guardar_eventos(scrapers=None):
                 stats_por_fuente[fuente]["duplicados"] += 1
 
         db.commit()
-        db_sb.commit()
+        
+        # Intentar guardar en Supabase (opcional, no crítico)
+        try:
+            db_sb.commit()
+            print("✅ Eventos guardados también en Supabase")
+        except Exception as e:
+            print(f"⚠️ No se pudo guardar en Supabase (no crítico): {e}")
+            db_sb.rollback()
 
         db.close()
         db_sb.close()

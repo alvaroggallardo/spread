@@ -8,6 +8,8 @@ def get_events_fiestasasturias_api(max_pages=50):
 
 
     api_base = "https://api.ww-api.com/front"
+    SITE_ID = 3649360
+    SECTION_ID = 60825576  # categoría "Todas"
     eventos = []
     vistos = set()
     page = 1
