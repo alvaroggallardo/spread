@@ -1,3 +1,23 @@
+"""
+⚠️ DEPRECATED - Este archivo está obsoleto ⚠️
+
+Este archivo monolítico ha sido refactorizado en un sistema modular.
+Todos los scrapers ahora están en: app/scrapers/
+
+Nuevo sistema:
+- app/scrapers/base.py - Utilidades comunes
+- app/scrapers/oviedo.py, gijon.py, etc. - Scrapers individuales
+- app/scrapers/orchestrator.py - Ejecuta todos los scrapers
+- app/scrapers/__init__.py - Exporta funciones principales
+
+Para usar el nuevo sistema:
+    from app.scrapers import scrape_all_sources
+    eventos = scrape_all_sources()
+
+Este archivo se mantiene temporalmente para compatibilidad pero será eliminado en el futuro.
+Fecha de deprecación: 2024-12-23
+"""
+
 import re
 import json
 import time
