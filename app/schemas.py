@@ -1,7 +1,7 @@
 # app/schemas.py
 
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 
 class EventoSchema(BaseModel):
@@ -18,4 +18,18 @@ class EventoSchema(BaseModel):
     class Config:
         orm_mode = True
 
+class InformeScrapSchema(BaseModel):
+    id: int
+    fecha_ejecucion: datetime
+    duracion_segundos: int
+    total_eventos: int
+    eventos_nuevos: int
+    eventos_duplicados: int
+    scrapers_exitosos: int
+    scrapers_fallidos: int
+    detalles: Dict[str, Any]
+    errores: Optional[str] = None
+    estado: str
 
+    class Config:
+        orm_mode = True

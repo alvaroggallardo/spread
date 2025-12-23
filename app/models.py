@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, JSON
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # Definimos conexión con PostgreSQL y fallback a SQLite si no está configurado
@@ -34,7 +34,25 @@ class Evento(Base):
     link = Column(String)
     disciplina = Column(String)
 
+class InformeScrap(Base):
+    """Modelo para almacenar informes de ejecuciones de scraping."""
+    __tablename__ = "informes_scrap"
+
+    id = Column(Integer, primary_key=True)
+    fecha_ejecucion = Column(DateTime)
+    duracion_segundos = Column(Integer)  # Duración total del scraping
+    total_eventos = Column(Integer)  # Total de eventos procesados
+    eventos_nuevos = Column(Integer)  # Eventos insertados
+    eventos_duplicados = Column(Integer)  # Eventos descartados por duplicados
+    scrapers_exitosos = Column(Integer)  # Número de scrapers que funcionaron
+    scrapers_fallidos = Column(Integer)  # Número de scrapers que fallaron
+    detalles = Column(JSON)  # Detalles por fuente: {"fuente": {"nuevos": X, "duplicados": Y, "error": "..."}}
+    errores = Column(Text, nullable=True)  # Errores concatenados si los hay
+    estado = Column(String)  # "exitoso", "parcial", "fallido"
+
 def init_db():
+    """Crea todas las tablas (eventos, informes_scrap) si no existen."""
     Base.metadata.create_all(bind=engine)
+    print("✅ Tablas de base de datos verificadas/creadas")
 
 

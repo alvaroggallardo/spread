@@ -236,6 +236,62 @@ def scrap_get_friendly():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ------------------------
+# ENDPOINTS DE INFORMES
+# ------------------------
+
+@app.get("/informes", response_model=List)
+def listar_informes(
+    limit: int = 10,
+    db: Session = Depends(get_db)
+):
+    """
+    Lista los últimos informes de scraping.
+    
+    Args:
+        limit: Número máximo de informes a retornar (default: 10)
+    """
+    from app.models import InformeScrap
+    from app.schemas import InformeScrapSchema
+    
+    informes = db.query(InformeScrap)\
+        .order_by(InformeScrap.fecha_ejecucion.desc())\
+        .limit(limit)\
+        .all()
+    
+    return informes
+
+@app.get("/ultimo-informe")
+def ultimo_informe(db: Session = Depends(get_db)):
+    """
+    Retorna el último informe de scraping con formato legible.
+    """
+    from app.models import InformeScrap
+    
+    informe = db.query(InformeScrap)\
+        .order_by(InformeScrap.fecha_ejecucion.desc())\
+        .first()
+    
+    if not informe:
+        return {"mensaje": "No hay informes disponibles"}
+    
+    # Formatear para mejor legibilidad
+    return {
+        "id": informe.id,
+        "fecha": informe.fecha_ejecucion.strftime("%Y-%m-%d %H:%M:%S"),
+        "duracion": f"{informe.duracion_segundos}s",
+        "estado": informe.estado.upper(),
+        "resumen": {
+            "total_eventos": informe.total_eventos,
+            "nuevos": informe.eventos_nuevos,
+            "duplicados": informe.eventos_duplicados,
+            "scrapers_ok": informe.scrapers_exitosos,
+            "scrapers_error": informe.scrapers_fallidos
+        },
+        "detalle_por_fuente": informe.detalles,
+        "errores": informe.errores
+    }
+
 @app.get("/test-supa")
 def test_supa():
     try:

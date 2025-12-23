@@ -2,9 +2,12 @@
 Orquestador principal que ejecuta todos los scrapers de eventos.
 """
 
-def scrape_all_sources():
+def scrape_all_sources(report=None):
     """
     Ejecuta todos los scrapers disponibles y retorna lista unificada de eventos.
+    
+    Args:
+        report: Instancia opcional de ScrapingReport para registrar estadísticas
     
     Returns:
         list: Lista consolidada de todos los eventos de todas las fuentes
@@ -47,13 +50,30 @@ def scrape_all_sources():
             
             # Ejecutar scraper con sus parámetros
             events = scraper_func(**kwargs)
+            
+            # Contar eventos antes de agregar (para estadísticas)
+            num_events = len(events)
             all_events.extend(events)
-            print(f"✅ {name}: {len(events)} eventos")
+            
+            print(f"✅ {name}: {num_events} eventos")
+            
+            # Si hay un reporte, registrar éxito (duplicados se contarán después)
+            if report:
+                report.registrar_fuente(name, nuevos=0, duplicados=0, error=None)
             
         except Exception as e:
-            print(f"❌ Error en {name}: {e}")
-            import traceback
-            traceback.print_exc()
+            error_msg = str(e)
+            print(f"❌ Error en {name}: {error_msg}")
+            
+            # Registrar error en el reporte
+            if report:
+                import traceback
+                error_detail = f"{error_msg}\n{traceback.format_exc()}"
+                report.registrar_fuente(name, nuevos=0, duplicados=0, error=error_detail)
+            else:
+                import traceback
+                traceback.print_exc()
+            
             continue
     
     print(f"\n🎉 Total eventos recopilados: {len(all_events)}")
