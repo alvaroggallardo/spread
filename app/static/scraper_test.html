@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scraper Test - Spread</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .control-panel {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            background: white;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+
+        select:hover {
+            border-color: #667eea;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .output-panel {
+            background: #1e1e1e;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            min-height: 500px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #2d2d2d;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .stat-label {
+            color: #999;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            color: #fff;
+            font-size: 1.8em;
+            font-weight: bold;
+        }
+
+        .console {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 8px;
+            border-radius: 4px;
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .log-start {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        .log-log {
+            color: #e0e0e0;
+        }
+
+        .log-event {
+            background: #2d2d2d;
+            color: #64B5F6;
+            border-left: 3px solid #2196F3;
+        }
+
+        .log-summary {
+            color: #FFD54F;
+            font-weight: bold;
+        }
+
+        .log-complete {
+            color: #4CAF50;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+
+        .log-error {
+            color: #f44336;
+            background: rgba(244, 67, 54, 0.1);
+            border-left: 3px solid #f44336;
+        }
+
+        .event-details {
+            margin-left: 20px;
+            color: #aaa;
+            font-size: 0.9em;
+        }
+
+        .timestamp {
+            color: #666;
+            font-size: 0.85em;
+            margin-right: 10px;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-idle { background: #999; }
+        .status-running { background: #4CAF50; animation: pulse 1.5s infinite; }
+        .status-error { background: #f44336; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Scraper Test Console</h1>
+            <p class="subtitle">Ejecuta scrapers en tiempo real sin guardar en base de datos</p>
+        </div>
+
+        <div class="control-panel">
+            <div class="form-group">
+                <label for="scraper-select">
+                    <span class="status-indicator" id="status-indicator"></span>
+                    Selecciona un Scraper
+                </label>
+                <select id="scraper-select">
+                    <option value="">-- Selecciona un scraper --</option>
+                    <option value="oviedo">Oviedo (VisitOviedo)</option>
+                    <option value="gijon">Gijón</option>
+                    <option value="mieres">Mieres</option>
+                    <option value="aviles">Avilés</option>
+                    <option value="siero">Siero</option>
+                    <option value="laboral">Laboral</option>
+                    <option value="asturies_cultura">Asturies Cultura</option>
+                    <option value="conciertos_club">Conciertos Club</option>
+                    <option value="camara_gijon">Cámara Gijón</option>
+                    <option value="laboral_centro_arte">Laboral Centro Arte</option>
+                    <option value="asturias_convivencias">Asturias Convivencias</option>
+                    <option value="umami_gijon">Umami Gijón</option>
+                    <option value="jarascada">Jarascada</option>
+                    <option value="agenda_gijon">Agenda Gijón</option>
+                </select>
+            </div>
+            <button class="btn" id="run-btn" onclick="runScraper()">
+                ▶️ Ejecutar Scraper
+            </button>
+            <button class="btn" id="clear-btn" onclick="clearConsole()" style="margin-left: 10px; background: #555;">
+                🗑️ Limpiar
+            </button>
+        </div>
+
+        <div class="output-panel">
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-label">Estado</div>
+                    <div class="stat-value" id="status">Inactivo</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Eventos Encontrados</div>
+                    <div class="stat-value" id="event-count">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Duración</div>
+                    <div class="stat-value" id="duration">--</div>
+                </div>
+            </div>
+            <div class="console" id="console">
+                <div class="log-entry" style="color: #999;">
+                    Selecciona un scraper y presiona "Ejecutar Scraper" para comenzar...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        let eventCount = 0;
+        let startTime = null;
+
+        function updateStatus(status, indicator = 'idle') {
+            document.getElementById('status').textContent = status;
+            const statusEl = document.getElementById('status-indicator');
+            statusEl.className = 'status-indicator status-' + indicator;
+        }
+
+        function addLog(message, type = 'log') {
+            const console = document.getElementById('console');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry log-' + type;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            entry.innerHTML = `<span class="timestamp">[${timestamp}]</span>${message}`;
+            
+            console.appendChild(entry);
+            console.scrollTop = console.scrollHeight;
+        }
+
+        function clearConsole() {
+            document.getElementById('console').innerHTML = '';
+            document.getElementById('event-count').textContent = '0';
+            document.getElementById('duration').textContent = '--';
+            eventCount = 0;
+            updateStatus('Inactivo', 'idle');
+        }
+
+        function runScraper() {
+            const scraperSelect = document.getElementById('scraper-select');
+            const scraperName = scraperSelect.value;
+            
+            if (!scraperName) {
+                alert('Por favor selecciona un scraper');
+                return;
+            }
+
+            // Cerrar conexión anterior si existe
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            // Limpiar consola y resetear contadores
+            clearConsole();
+            eventCount = 0;
+            startTime = Date.now();
+
+            // Deshabilitar botón
+            const runBtn = document.getElementById('run-btn');
+            runBtn.disabled = true;
+            runBtn.innerHTML = '<span class="spinner"></span> Ejecutando...';
+
+            updateStatus('Ejecutando', 'running');
+            addLog(`🚀 Iniciando scraper: <strong>${scraperName}</strong>`, 'start');
+
+            // Crear conexión SSE
+            eventSource = new EventSource(`/test-scraper/${scraperName}`);
+
+            eventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                switch(data.type) {
+                    case 'start':
+                        addLog(`✅ Scraper iniciado: ${data.scraper}`, 'start');
+                        break;
+                    
+                    case 'log':
+                        addLog(data.message, 'log');
+                        break;
+                    
+                    case 'summary':
+                        const duration = data.duration;
+                        document.getElementById('duration').textContent = duration;
+                        addLog(`📊 Total eventos encontrados: <strong>${data.total_events}</strong> (${duration})`, 'summary');
+                        break;
+                    
+                    case 'event':
+                        eventCount++;
+                        document.getElementById('event-count').textContent = eventCount;
+                        
+                        const ev = data.data;
+                        let eventHtml = `📅 <strong>${ev.evento}</strong>`;
+                        eventHtml += `<div class="event-details">`;
+                        eventHtml += `📍 ${ev.lugar || 'N/A'}<br>`;
+                        eventHtml += `🗓️ ${ev.fecha ? new Date(ev.fecha).toLocaleDateString('es-ES') : 'N/A'}<br>`;
+                        eventHtml += `🏷️ ${ev.disciplina || 'N/A'}`;
+                        eventHtml += `</div>`;
+                        
+                        addLog(eventHtml, 'event');
+                        break;
+                    
+                    case 'complete':
+                        addLog(`✅ <strong>Scraping completado!</strong> Total: ${data.total} eventos`, 'complete');
+                        updateStatus('Completado', 'idle');
+                        runBtn.disabled = false;
+                        runBtn.innerHTML = '▶️ Ejecutar Scraper';
+                        eventSource.close();
+                        break;
+                    
+                    case 'error':
+                        addLog(`❌ <strong>Error:</strong> ${data.message}`, 'error');
+                        if (data.detail) {
+                            addLog(`<pre style="color: #f44336; font-size: 0.85em;">${data.detail}</pre>`, 'error');
+                        }
+                        updateStatus('Error', 'error');
+                        runBtn.disabled = false;
+                        runBtn.innerHTML = '▶️ Ejecutar Scraper';
+                        eventSource.close();
+                        break;
+                }
+            };
+
+            eventSource.onerror = function(error) {
+                addLog('❌ Error de conexión con el servidor', 'error');
+                updateStatus('Error', 'error');
+                runBtn.disabled = false;
+                runBtn.innerHTML = '▶️ Ejecutar Scraper';
+                eventSource.close();
+            };
+        }
+
+        // Permitir ejecutar con Enter
+        document.getElementById('scraper-select').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                runScraper();
+            }
+        });
+    </script>
+</body>
+</html>

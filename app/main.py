@@ -1,9 +1,10 @@
 from fastapi import FastAPI, HTTPException, Depends, status, Header, Security
 from fastapi.security import APIKeyHeader
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import APIRouter
+from fastapi.staticfiles import StaticFiles
 
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
@@ -21,6 +22,7 @@ from app.embeddings import generar_embeddings
 
 from app.grok_intent import interpretar_pregunta_grok
 from app.grok_intent import llamar_grok_para_respuesta
+from app.scraper_test import stream_scraper_output, get_available_scrapers
 
 from sqlalchemy import and_
 
@@ -235,6 +237,47 @@ def scrap_get_friendly():
         return {"status": "OK", "insertados": nuevos}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ------------------------
+# ENDPOINTS DE TESTING DE SCRAPERS
+# ------------------------
+
+@app.get("/test-scraper-ui")
+def get_scraper_test_ui():
+    """
+    Sirve la interfaz HTML para testing de scrapers.
+    """
+    return FileResponse("app/static/scraper_test.html")
+
+@app.get("/test-scraper/{scraper_name}")
+def test_scraper_stream(scraper_name: str):
+    """
+    Ejecuta un scraper y retorna el output en tiempo real usando SSE.
+    No guarda nada en la base de datos.
+    
+    Args:
+        scraper_name: Nombre del scraper a ejecutar (oviedo, gijon, etc.)
+    """
+    return StreamingResponse(
+        stream_scraper_output(scraper_name),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # Deshabilitar buffering en nginx
+        }
+    )
+
+@app.get("/list-scrapers")
+def list_scrapers():
+    """
+    Lista todos los scrapers disponibles.
+    """
+    return {
+        "scrapers": get_available_scrapers(),
+        "total": len(get_available_scrapers())
+    }
+
 
 # ------------------------
 # ENDPOINTS DE INFORMES
