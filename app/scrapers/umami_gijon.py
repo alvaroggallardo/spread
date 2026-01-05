@@ -14,33 +14,27 @@ def get_events_gijon_umami(max_days_ahead=90):
         time.sleep(5)  # esperar carga inicial de JS
 
         soup = BeautifulSoup(driver.page_source, "html.parser")
-        cards = soup.select("div.mep-event-list-loop.mep_event_grid_item")
+        cards = soup.select("div.mep_event_grid_item")  # más robusto
 
         if not cards:
-            # pequeño scroll para forzar lazy-load si aplica
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(2)
             soup = BeautifulSoup(driver.page_source, "html.parser")
-            cards = soup.select("div.mep-event-list-loop.mep_event_grid_item")
+            cards = soup.select("div.mep_event_grid_item")
 
         for c in cards:
             # --- fecha ---
             parsed_date = None
-            date_raw = (c.get("data-date") or "").strip()  # formato: mm/dd/yyyy
-            if re.fullmatch(r"\d{2}/\d{2}/\d{4}", date_raw):
-                try:
-                    parsed_date = datetime.strptime(date_raw, "%m/%d/%Y")
-                except Exception:
-                    parsed_date = None
-
-            # Fallback: extraer del primer h5 de la fecha (ej. "miércoles, 13 Ago, 2025")
-            if not parsed_date:
-                h5_date = c.select_one("li.mep_list_event_date .evl-cc h5")
-                if h5_date:
-                    parsed_date = dateparser.parse(h5_date.get_text(strip=True), languages=["es"])
+            date_raw = (c.get("data-date") or "").strip()  # YYYY-MM-DD
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_raw):
+                parsed_date = datetime.strptime(date_raw, "%Y-%m-%d")
+            else:
+                p_date = c.select_one("li.mep_list_event_date .evl-cc p")
+                if p_date:
+                    parsed_date = dateparser.parse(p_date.get_text(strip=True), languages=["es"])
 
             if not parsed_date:
-                continue  # sin fecha no podemos normalizar ni filtrar
+                continue
 
             # Filtra por ventana temporal
             delta_days = (parsed_date.date() - datetime.now().date()).days
@@ -55,22 +49,20 @@ def get_events_gijon_umami(max_days_ahead=90):
 
             # --- hora ---
             time_str = ""
-            for h in reversed(c.select("li.mep_list_event_date .evl-cc h5")):
-                t = h.get_text(strip=True)
-                if re.search(r"\d{1,2}:\d{2}", t):
-                    time_str = t
-                    break
+            p_time = c.select_one("li.mep_list_event_date .evl-cc p:nth-of-type(2)")
+            if p_time:
+                time_str = p_time.get_text(strip=True)
 
             # --- localización ---
-            loc_el = c.select_one("li.mep_list_location_name h5")
+            loc_el = c.select_one("li.mep_list_location_name .evl-cc h6")
             location = loc_el.get_text(strip=True) if loc_el else "Gijón"
             lugar = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location)}", "{location}")'
 
             # --- link ---
-            a = c.select_one("a.plnb-book-now")
-            link = a["href"].strip() if a and a.has_attr("href") else url
+            a = c.select_one("a[href]")
+            link = a["href"].strip() if a else url
 
-            # --- disciplina (según tu helper) ---
+            # --- disciplina ---
             disciplina = inferir_disciplina(title)
 
             # ✅ Evitar duplicados por link
@@ -81,9 +73,9 @@ def get_events_gijon_umami(max_days_ahead=90):
             events.append({
                 "fuente": "UmamiGijon",
                 "evento": title,
-                "fecha": parsed_date,   # datetime, igual que en tu modelo de Oviedo
+                "fecha": parsed_date,
                 "hora": time_str,
-                "lugar": lugar,         # fórmula HYPERLINK lista para Excel/Sheets
+                "lugar": lugar,
                 "link": link,
                 "disciplina": disciplina
             })
@@ -97,9 +89,3 @@ def get_events_gijon_umami(max_days_ahead=90):
 
     print(f"🎉 Total eventos Gijón/Umami: {len(events)}")
     return events
-
-
-# --------------------------
-# Scraping SpainSwing (Asturias) adaptado al modelo Gijón/Oviedo
-# --------------------------
-
