@@ -5,7 +5,62 @@ Procesa archivos ICS locales de avilescomarca.info
 
 from app.scrapers.base import *
 
-def get_events_comarca_aviles(ics_path, months_ahead=2, only_future=True):
+def get_events_aviles(months_ahead=2, only_future=True):
+    """
+    Descarga el archivo ICS directamente desde la web de Comarca Avilés
+    y lo procesa.
+    
+    Args:
+        months_ahead: Número de meses a futuro desde hoy (default: 2 meses)
+        only_future: Si True, filtra solo eventos futuros
+    
+    Returns:
+        Lista de eventos con la estructura estándar
+    """
+    url = "https://avilescomarca.info/?ical=1"
+    events = []
+    
+    print(f"🌐 Descargando eventos desde {url}...")
+    print(f"📅 Buscando eventos hasta {months_ahead} mes(es) adelante...")
+    
+    try:
+        # Crear sesión con headers apropiados
+        session = requests.Session()
+        UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+        session.headers.update({
+            "User-Agent": UA,
+            "Accept": "text/calendar,text/plain,*/*;q=0.8",
+            "Accept-Language": "es-ES,es;q=0.9",
+            "Referer": "https://avilescomarca.info/",
+        })
+        
+        # Descargar el archivo ICS
+        resp = session.get(url, timeout=30, allow_redirects=True)
+        resp.raise_for_status()
+        
+        # Obtener el contenido
+        ics_content = resp.text if resp.text else resp.content.decode("utf-8", errors="ignore")
+        
+        # Guardar temporalmente para debugging (opcional)
+        temp_path = "/tmp/comarca_aviles_temp.ics"
+        with open(temp_path, "w", encoding="utf-8") as f:
+            f.write(ics_content)
+        
+        # Procesar usando la función auxiliar
+        events = _process_ics_file(temp_path, months_ahead=months_ahead, only_future=only_future)
+        
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Error descargando el archivo ICS: {e}")
+    except Exception as e:
+        print(f"❌ Error procesando eventos online: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return events
+
+
+def _process_ics_file(ics_path, months_ahead=2, only_future=True):
     """
     Carga eventos desde un archivo ICS local de Comarca Avilés.
     
@@ -137,83 +192,40 @@ def get_events_comarca_aviles(ics_path, months_ahead=2, only_future=True):
     
     return events
 
-
-def get_events_comarca_aviles_online(months_ahead=2, only_future=True):
+# Función auxiliar para procesar archivo ICS local (útil para testing)
+def get_events_aviles_from_file(ics_path, months_ahead=2, only_future=True):
     """
-    Descarga el archivo ICS directamente desde la web de Comarca Avilés
-    y lo procesa.
+    Carga eventos desde un archivo ICS local de Comarca Avilés.
+    Útil para testing o procesamiento offline.
     
     Args:
+        ics_path: Ruta al archivo .ics descargado
         months_ahead: Número de meses a futuro desde hoy (default: 2 meses)
         only_future: Si True, filtra solo eventos futuros
     
     Returns:
         Lista de eventos con la estructura estándar
     """
-    url = "https://avilescomarca.info/?ical=1"
-    events = []
-    
-    print(f"🌐 Descargando eventos desde {url}...")
-    print(f"📅 Buscando eventos hasta {months_ahead} mes(es) adelante...")
-    
-    try:
-        # Crear sesión con headers apropiados
-        session = requests.Session()
-        UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-              "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-        session.headers.update({
-            "User-Agent": UA,
-            "Accept": "text/calendar,text/plain,*/*;q=0.8",
-            "Accept-Language": "es-ES,es;q=0.9",
-            "Referer": "https://avilescomarca.info/",
-        })
-        
-        # Descargar el archivo ICS
-        resp = session.get(url, timeout=30, allow_redirects=True)
-        resp.raise_for_status()
-        
-        # Obtener el contenido
-        ics_content = resp.text if resp.text else resp.content.decode("utf-8", errors="ignore")
-        
-        # Guardar temporalmente para debugging (opcional)
-        temp_path = "/tmp/comarca_aviles_temp.ics"
-        with open(temp_path, "w", encoding="utf-8") as f:
-            f.write(ics_content)
-        
-        # Procesar usando la función de archivo local
-        events = get_events_comarca_aviles(temp_path, months_ahead=months_ahead, only_future=only_future)
-        
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Error descargando el archivo ICS: {e}")
-    except Exception as e:
-        print(f"❌ Error procesando eventos online: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    return events
+    return _process_ics_file(ics_path, months_ahead, only_future)
 
 
 # Ejemplo de uso
 if __name__ == "__main__":
-    # Opción 1: Desde archivo local - 2 meses vista (por defecto)
-    eventos_local = get_events_comarca_aviles(
-        ics_path="comarca-aviles-85f0f855bee.ics",
-        only_future=True  # months_ahead=2 por defecto
-    )
+    # Opción 1: Descarga directa desde web (PRODUCCIÓN)
+    eventos = get_events_aviles()
     
-    print(f"\n📊 Resumen: {len(eventos_local)} eventos encontrados (2 meses)")
+    print(f"\n📊 Resumen: {len(eventos)} eventos encontrados (2 meses)")
     
     # Mostrar los primeros 3 eventos como ejemplo
-    for i, evento in enumerate(eventos_local[:3], 1):
+    for i, evento in enumerate(eventos[:3], 1):
         print(f"\n--- Evento {i} ---")
         print(f"Título: {evento['evento']}")
         print(f"Fecha: {evento['fecha']}")
         print(f"Hora: {evento['hora']}")
         print(f"Disciplina: {evento['disciplina']}")
-        print(f"Lugar: {evento['lugar']}")
     
     print("\n" + "="*50)
     
-    # Opción 2: Descarga directa desde web - también 2 meses por defecto
-    # eventos_online = get_events_comarca_aviles_online(only_future=True)
-    # print(f"\n📊 Eventos online: {len(eventos_online)} eventos encontrados (2 meses)")
+    # Opción 2: Desde archivo local (TESTING)
+    # eventos_local = get_events_aviles_from_file("comarca-aviles.ics")
+    # print(f"\n📊 Eventos locales: {len(eventos_local)} eventos")
