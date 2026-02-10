@@ -1,95 +1,115 @@
 """
-Scraper para eventos de Gijón oficial.
+Scraper para eventos - Aviles.
 """
 
-import time
-from app.scrapers.base import (
-    get_selenium_driver,
-    inferir_disciplina,
-    BeautifulSoup,
-    dateparser,
-    quote_plus
-)
+from app.scrapers.base import *
+
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 
-def get_events_gijon(max_pages=100):
-    """
-    Obtiene eventos de Gijón oficial usando Selenium.
-    
-    Args:
-        max_pages: Número máximo de páginas a scrapear
-        
-    Returns:
-        list: Lista de diccionarios con información de eventos
-    """
-    base_url = "https://www.gijon.es/es/eventos?pag="
+def get_events_aviles():
+    url = "https://aviles.es/proximos-eventos"
     events = []
 
-    for page in range(1, max_pages + 1):
-        url = f"{base_url}{page}&"
-        print(f"🌐 Cargando página {page}: {url}")
-        driver = get_selenium_driver(headless=True)
+    # Importante: NO headless para evitar el cuelgue del renderer
+    driver = get_selenium_driver(headless=False)
 
-        try:
-            driver.get(url)
-            time.sleep(2)  # suficiente para carga estática
-            soup = BeautifulSoup(driver.page_source, "html.parser")
-            items = soup.select("div.col-lg-4.col-md-6.col-12")
-            print(f"📦 Página {page}: {len(items)} eventos encontrados")
+    try:
+        driver.set_page_load_timeout(60)
+        driver.set_script_timeout(60)
 
-            if not items:
-                print("🚫 No más eventos, parada anticipada.")
-                break
+        driver.get(url)
 
-            for idx, item in enumerate(items):
-                title_el = item.select_one("div.tituloEventos a")
-                title = title_el.text.strip() if title_el else "Sin título"
-                link = "https://www.gijon.es" + title_el["href"] if title_el else ""
-                print(f"🔹 [{idx}] Título: {title}")
+        # Esperar a que existan las cards
+        WebDriverWait(driver, 40).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "div.card.border-info"))
+        )
 
-                # ✅ Evitar duplicados
-                if any(ev["link"] == link for ev in events):
-                    print(f"🔁 Evento duplicado saltado: {title}")
-                    continue
+        time.sleep(1)
 
-                # Fecha
-                date_text = ""
-                for span in item.select("span"):
-                    if "Fechas:" in span.text:
-                        date_text = span.text.replace("Fechas:", "").strip()
-                        break
-                fecha_evento = dateparser.parse(date_text, languages=["es"])
-                if not fecha_evento:
-                    print("❌ Fecha no reconocida, descartado.")
-                    continue
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        cards = soup.select("div.card.border-info")
+        print("Aviles: {} eventos encontrados".format(len(cards)))
 
-                # Hora
+        if not cards:
+            print("No hay eventos en Aviles.")
+            return events
+
+        for idx, card in enumerate(cards):
+            # Titulo
+            title_el = card.select_one("h5")
+            title = title_el.get_text(strip=True) if title_el else "Sin titulo"
+            print("[{}] Titulo: {}".format(idx, title))
+
+            # Link del popup (onclick del boton)
+            link = ""
+            btn = card.select_one("div.btn.btn-primary")
+            if btn and btn.has_attr("onclick"):
+                onclick_attr = btn["onclick"].strip()
+                if "showPopup('" in onclick_attr:
+                    try:
+                        relative_url = onclick_attr.split("showPopup('")[1].split("'")[0]
+                        link = "https://aviles.es{}".format(relative_url)
+                    except Exception:
+                        link = ""
+
+            # Fecha y hora
+            inicio_text = ""
+            for badge in card.select("span.badge"):
+                badge_text = badge.get_text(strip=True)
+                if "INICIO" in badge_text:
+                    inicio_text = badge_text.replace("INICIO:", "").strip()
+                    break
+
+            fecha_evento = dateparser.parse(inicio_text, languages=["es"])
+            if not fecha_evento:
+                print("[{}] Fecha no reconocida, descartado.".format(idx))
+                continue
+
+            # Hora
+            hora_text = ""
+            try:
+                hora_text = fecha_evento.strftime("%H:%M")
+            except Exception:
                 hora_text = ""
-                for span in item.select("span"):
-                    if "Horario:" in span.text:
-                        hora_text = span.text.replace("Horario:", "").strip()
-                        break
 
-                # Lugar
-                location_el = item.select_one("span.localizacion a")
-                location = location_el.text.strip() if location_el else "Gijón"
+            # Lugar
+            lugar = "Aviles"
+            card_text = card.select_one("div.card-text")
+            if card_text:
+                full_text = card_text.get_text(" ", strip=True)
+                if "Lugar:" in full_text:
+                    raw_lugar = full_text.split("Lugar:")[-1].strip()
+                    lugar = raw_lugar.split("(")[0].strip().rstrip(".")
 
-                disciplina = inferir_disciplina(title)
+            # Inferir disciplina a partir del titulo
+            disciplina = inferir_disciplina(title)
 
-                events.append({
-                    "fuente": "Gijón",
-                    "evento": title,
-                    "fecha": fecha_evento,
-                    "hora": hora_text,
-                    "lugar": f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location)}", "{location}")',
-                    "link": link,
-                    "disciplina": disciplina
-                })
-                print("✅ Añadido.")
-        except Exception as e:
-            print(f"❌ [Gijón][Página {page}] Error: {e}")
-        finally:
+            # Construir evento
+            events.append({
+                "fuente": "Aviles",
+                "evento": title,
+                "fecha": fecha_evento,
+                "hora": hora_text,
+                "lugar": '=HYPERLINK("https://www.google.com/maps/search/?api=1&query={}", "{}")'.format(
+                    quote_plus(lugar), lugar
+                ),
+                "link": link,
+                "disciplina": disciplina
+            })
+
+            print("[{}] Aniadido.".format(idx))
+
+    except Exception as e:
+        print("Error en Aviles: {}".format(e))
+
+    finally:
+        try:
             driver.quit()
+        except Exception:
+            pass
 
-    print(f"🎉 Total eventos Gijón: {len(events)}")
+    print("Total eventos Aviles: {}".format(len(events)))
     return events
