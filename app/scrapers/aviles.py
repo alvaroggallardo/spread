@@ -4,20 +4,28 @@ Scraper para eventos - Aviles.
 
 from app.scrapers.base import *
 import requests
+import os
 
 
 def get_events_aviles():
     url = "https://aviles.es/proximos-eventos"
     events = []
 
+    # Respetar proxies del entorno (corporativo / CI / sistema)
+    proxies = {
+        "http": os.environ.get("http_proxy") or os.environ.get("HTTP_PROXY"),
+        "https": os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY"),
+    }
+
     try:
         response = requests.get(
             url,
-            timeout=30,
+            timeout=60,
             headers={
                 "User-Agent": "Mozilla/5.0",
                 "Accept-Language": "es-ES,es;q=0.9"
-            }
+            },
+            proxies=proxies if any(proxies.values()) else None
         )
         response.raise_for_status()
 
