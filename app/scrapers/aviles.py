@@ -3,39 +3,25 @@ Scraper para eventos - Aviles.
 """
 
 from app.scrapers.base import *
-
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+import requests
 
 
 def get_events_aviles():
     url = "https://aviles.es/proximos-eventos"
     events = []
 
-    # Importante: headless, pero estabilizado desde aqui
-    driver = get_selenium_driver(headless=True)
-
     try:
-        driver.set_page_load_timeout(45)
-        driver.set_script_timeout(45)
-
-        driver.get(url)
-
-        # Esperar a que existan las cards en el DOM
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "div.card.border-info"))
+        response = requests.get(
+            url,
+            timeout=30,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept-Language": "es-ES,es;q=0.9"
+            }
         )
+        response.raise_for_status()
 
-        # Espera corta para que el contenido se asiente
-        time.sleep(1)
-
-        page_source = driver.page_source
-        if not page_source or len(page_source) < 1000:
-            print("HTML incompleto recibido desde Selenium.")
-            return events
-
-        soup = BeautifulSoup(page_source, "html.parser")
+        soup = BeautifulSoup(response.text, "html.parser")
         cards = soup.select("div.card.border-info")
         print("Aviles: {} eventos encontrados".format(len(cards)))
 
@@ -53,7 +39,7 @@ def get_events_aviles():
             link = ""
             btn = card.select_one("div.btn.btn-primary")
             if btn and btn.has_attr("onclick"):
-                onclick_attr = btn["onclick"].strip()
+                onclick_attr = btn["onclick"]
                 if "showPopup('" in onclick_attr:
                     try:
                         relative_url = onclick_attr.split("showPopup('")[1].split("'")[0]
@@ -106,12 +92,6 @@ def get_events_aviles():
 
     except Exception as e:
         print("Error en Aviles: {}".format(e))
-
-    finally:
-        try:
-            driver.quit()
-        except Exception:
-            pass
 
     print("Total eventos Aviles: {}".format(len(events)))
     return events
