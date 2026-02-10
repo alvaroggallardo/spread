@@ -5,12 +5,13 @@ Procesa archivos ICS locales de avilescomarca.info
 
 from app.scrapers.base import *
 
-def get_events_comarca_aviles(ics_path, only_future=True):
+def get_events_comarca_aviles(ics_path, months_ahead=2, only_future=True):
     """
     Carga eventos desde un archivo ICS local de Comarca Avilés.
     
     Args:
         ics_path: Ruta al archivo .ics descargado
+        months_ahead: Número de meses a futuro desde hoy (default: 2 meses)
         only_future: Si True, filtra solo eventos futuros
     
     Returns:
@@ -19,6 +20,21 @@ def get_events_comarca_aviles(ics_path, only_future=True):
     events = []
     seen = set()
     hoy = datetime.now().date()
+    
+    # Calcular fecha límite (hoy + N meses)
+    try:
+        from dateutil.relativedelta import relativedelta
+        fecha_limite = hoy + relativedelta(months=months_ahead)
+    except ImportError:
+        # Fallback si no está disponible dateutil
+        import calendar
+        year = hoy.year
+        month = hoy.month + months_ahead
+        if month > 12:
+            year += month // 12
+            month = month % 12 or 12
+        day = min(hoy.day, calendar.monthrange(year, month)[1])
+        fecha_limite = datetime(year, month, day).date()
     
     print(f"📂 Cargando eventos desde {ics_path}...")
     
@@ -58,6 +74,10 @@ def get_events_comarca_aviles(ics_path, only_future=True):
             
             # Filtrar eventos pasados si only_future=True
             if only_future and fecha_evento and fecha_evento.date() < hoy:
+                continue
+            
+            # Filtrar eventos más allá del rango especificado (hoy + months_ahead)
+            if fecha_evento and fecha_evento.date() > fecha_limite:
                 continue
             
             # Categorías (pueden ser múltiples separadas por coma)
@@ -107,12 +127,13 @@ def get_events_comarca_aviles(ics_path, only_future=True):
     return events
 
 
-def get_events_comarca_aviles_online(only_future=True):
+def get_events_comarca_aviles_online(months_ahead=2, only_future=True):
     """
     Descarga el archivo ICS directamente desde la web de Comarca Avilés
     y lo procesa.
     
     Args:
+        months_ahead: Número de meses a futuro desde hoy (default: 2 meses)
         only_future: Si True, filtra solo eventos futuros
     
     Returns:
@@ -122,6 +143,7 @@ def get_events_comarca_aviles_online(only_future=True):
     events = []
     
     print(f"🌐 Descargando eventos desde {url}...")
+    print(f"📅 Buscando eventos hasta {months_ahead} mes(es) adelante...")
     
     try:
         # Crear sesión con headers apropiados
@@ -148,7 +170,7 @@ def get_events_comarca_aviles_online(only_future=True):
             f.write(ics_content)
         
         # Procesar usando la función de archivo local
-        events = get_events_comarca_aviles(temp_path, only_future=only_future)
+        events = get_events_comarca_aviles(temp_path, months_ahead=months_ahead, only_future=only_future)
         
     except requests.exceptions.RequestException as e:
         print(f"❌ Error descargando el archivo ICS: {e}")
@@ -162,13 +184,13 @@ def get_events_comarca_aviles_online(only_future=True):
 
 # Ejemplo de uso
 if __name__ == "__main__":
-    # Opción 1: Desde archivo local
+    # Opción 1: Desde archivo local - 2 meses vista (por defecto)
     eventos_local = get_events_comarca_aviles(
         ics_path="comarca-aviles-85f0f855bee.ics",
-        only_future=True
+        only_future=True  # months_ahead=2 por defecto
     )
     
-    print(f"\n📊 Resumen: {len(eventos_local)} eventos encontrados")
+    print(f"\n📊 Resumen: {len(eventos_local)} eventos encontrados (2 meses)")
     
     # Mostrar los primeros 3 eventos como ejemplo
     for i, evento in enumerate(eventos_local[:3], 1):
@@ -179,5 +201,8 @@ if __name__ == "__main__":
         print(f"Disciplina: {evento['disciplina']}")
         print(f"Lugar: {evento['lugar']}")
     
-    # Opción 2: Descarga directa desde web (descomentar para usar)
+    print("\n" + "="*50)
+    
+    # Opción 2: Descarga directa desde web - también 2 meses por defecto
     # eventos_online = get_events_comarca_aviles_online(only_future=True)
+    # print(f"\n📊 Eventos online: {len(eventos_online)} eventos encontrados (2 meses)")
