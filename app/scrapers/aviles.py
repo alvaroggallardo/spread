@@ -1,88 +1,39 @@
 """
-Scraper para eventos - Aviles.
+Scraper para eventos de Aviles Comarca desde calendario ICS.
 """
 
-from app.scrapers.base import *
 import requests
-import os
+from app.scrapers.base import Calendar, inferir_disciplina, quote_plus
 
 
 def get_events_aviles():
-    url = "https://aviles.es/proximos-eventos"
+    url = "https://avilescomarca.info/?ical=1"
     events = []
 
-    # Respetar proxies del entorno (corporativo / CI / sistema)
-    proxies = {
-        "http": os.environ.get("http_proxy") or os.environ.get("HTTP_PROXY"),
-        "https": os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY"),
-    }
-
     try:
-        response = requests.get(
-            url,
-            timeout=60,
-            headers={
-                "User-Agent": "Mozilla/5.0",
-                "Accept-Language": "es-ES,es;q=0.9"
-            },
-            proxies=proxies if any(proxies.values()) else None
-        )
+        response = requests.get(url, timeout=30)
         response.raise_for_status()
 
-        soup = BeautifulSoup(response.text, "html.parser")
-        cards = soup.select("div.card.border-info")
-        print("Aviles: {} eventos encontrados".format(len(cards)))
+        cal = Calendar(response.text)
 
-        if not cards:
-            print("No hay eventos en Aviles.")
-            return events
+        for idx, event in enumerate(cal.events):
+            title = event.name or "Sin titulo"
+            link = event.url if event.url else "https://avilescomarca.info/que-hacer/calendario-de-eventos/"
+            lugar = event.location or "Aviles"
 
-        for idx, card in enumerate(cards):
-            # Titulo
-            title_el = card.select_one("h5")
-            title = title_el.get_text(strip=True) if title_el else "Sin titulo"
-            print("[{}] Titulo: {}".format(idx, title))
-
-            # Link del popup
-            link = ""
-            btn = card.select_one("div.btn.btn-primary")
-            if btn and btn.has_attr("onclick"):
-                onclick_attr = btn["onclick"]
-                if "showPopup('" in onclick_attr:
-                    try:
-                        relative_url = onclick_attr.split("showPopup('")[1].split("'")[0]
-                        link = "https://aviles.es{}".format(relative_url)
-                    except Exception:
-                        link = ""
-
-            # Fecha y hora
-            inicio_text = ""
-            for badge in card.select("span.badge"):
-                badge_text = badge.get_text(strip=True)
-                if "INICIO" in badge_text:
-                    inicio_text = badge_text.replace("INICIO:", "").strip()
-                    break
-
-            fecha_evento = dateparser.parse(inicio_text, languages=["es"])
-            if not fecha_evento:
-                print("[{}] Fecha no reconocida, descartado.".format(idx))
-                continue
-
-            try:
+            start_dt = event.begin
+            if start_dt:
+                fecha_evento = start_dt.datetime
                 hora_text = fecha_evento.strftime("%H:%M")
-            except Exception:
+            else:
+                fecha_evento = None
                 hora_text = ""
 
-            # Lugar
-            lugar = "Aviles"
-            card_text = card.select_one("div.card-text")
-            if card_text:
-                full_text = card_text.get_text(" ", strip=True)
-                if "Lugar:" in full_text:
-                    raw_lugar = full_text.split("Lugar:")[-1].strip()
-                    lugar = raw_lugar.split("(")[0].strip().rstrip(".")
-
             disciplina = inferir_disciplina(title)
+
+            # Evitar duplicados
+            if any(ev["link"] == link for ev in events):
+                continue
 
             events.append({
                 "fuente": "Aviles",
@@ -96,10 +47,8 @@ def get_events_aviles():
                 "disciplina": disciplina
             })
 
-            print("[{}] Aniadido.".format(idx))
-
     except Exception as e:
-        print("Error en Aviles: {}".format(e))
+        print("Error en Aviles (ICS): {}".format(e))
 
-    print("Total eventos Aviles: {}".format(len(events)))
+    print("Total eventos Aviles (ICS): {}".format(len(events)))
     return events
