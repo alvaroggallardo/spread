@@ -4,7 +4,7 @@ Descarga y procesa un calendario ICS online.
 """
 
 from app.scrapers.base import *
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import quote_plus
 
 
@@ -72,8 +72,8 @@ def _process_ics_file(ics_path, months_ahead=2, only_future=True):
 
     cal = Calendar(ics_content)
 
-    inicio = datetime.combine(hoy, datetime.min.time())
-    fin = datetime.combine(fecha_limite, datetime.max.time())
+    inicio = datetime.combine(hoy, datetime.min.time(), tzinfo=timezone.utc)
+    fin = datetime.combine(fecha_limite, datetime.max.time(), tzinfo=timezone.utc)
 
     for ev in cal.timeline.included(inicio, fin):
         title = ev.name or "Sin titulo"
@@ -81,7 +81,15 @@ def _process_ics_file(ics_path, months_ahead=2, only_future=True):
         uid = getattr(ev, "uid", "no-uid")
 
         start_dt = ev.begin.datetime
+        if start_dt and start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
+
         end_dt = ev.end.datetime if ev.end else None
+        if end_dt and end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
+
+        if not start_dt:
+            continue
 
         unique_key = uid + "_" + start_dt.isoformat()
         if unique_key in seen:
