@@ -12,21 +12,30 @@ from selenium.webdriver.support import expected_conditions as EC
 def get_events_aviles():
     url = "https://aviles.es/proximos-eventos"
     events = []
+
+    # Importante: headless, pero estabilizado desde aqui
     driver = get_selenium_driver(headless=True)
 
     try:
-        driver.set_page_load_timeout(60)
+        driver.set_page_load_timeout(45)
+        driver.set_script_timeout(45)
+
         driver.get(url)
 
-        # Esperar a que aparezcan las cards
+        # Esperar a que existan las cards en el DOM
         WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.card.border-info"))
         )
 
-        # Pequeña espera extra para que se rellenen bien algunos datos
+        # Espera corta para que el contenido se asiente
         time.sleep(1)
 
-        soup = BeautifulSoup(driver.page_source, "html.parser")
+        page_source = driver.page_source
+        if not page_source or len(page_source) < 1000:
+            print("HTML incompleto recibido desde Selenium.")
+            return events
+
+        soup = BeautifulSoup(page_source, "html.parser")
         cards = soup.select("div.card.border-info")
         print("Aviles: {} eventos encontrados".format(len(cards)))
 
@@ -38,26 +47,21 @@ def get_events_aviles():
             # Titulo
             title_el = card.select_one("h5")
             title = title_el.get_text(strip=True) if title_el else "Sin titulo"
-
             print("[{}] Titulo: {}".format(idx, title))
 
-            # Link del popup (onclick del boton)
+            # Link del popup
             link = ""
             btn = card.select_one("div.btn.btn-primary")
             if btn and btn.has_attr("onclick"):
                 onclick_attr = btn["onclick"].strip()
-
-                # Ejemplo:
-                # showPopup('/-/calendar/calendar/event/30388425?p_p_state=pop_up')
                 if "showPopup('" in onclick_attr:
                     try:
                         relative_url = onclick_attr.split("showPopup('")[1].split("'")[0]
-                        # Construimos la URL completa
                         link = "https://aviles.es{}".format(relative_url)
                     except Exception:
                         link = ""
 
-            # Fecha y hora (badge INICIO)
+            # Fecha y hora
             inicio_text = ""
             for badge in card.select("span.badge"):
                 badge_text = badge.get_text(strip=True)
@@ -70,8 +74,6 @@ def get_events_aviles():
                 print("[{}] Fecha no reconocida, descartado.".format(idx))
                 continue
 
-            # Hora
-            hora_text = ""
             try:
                 hora_text = fecha_evento.strftime("%H:%M")
             except Exception:
@@ -86,10 +88,8 @@ def get_events_aviles():
                     raw_lugar = full_text.split("Lugar:")[-1].strip()
                     lugar = raw_lugar.split("(")[0].strip().rstrip(".")
 
-            # Inferir disciplina a partir del titulo
             disciplina = inferir_disciplina(title)
 
-            # Construir evento
             events.append({
                 "fuente": "Aviles",
                 "evento": title,
