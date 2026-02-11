@@ -28,6 +28,7 @@ SCRAPER_REGISTRY = {
     "umami_gijon": ("app.scrapers.umami_gijon", "get_events_gijon_umami"),
     "jarascada": ("app.scrapers.jarascada", "get_events_jarascada"),
     "agenda_gijon": ("app.scrapers.agenda_gijon", "get_events_agenda_gijon"),
+    "niemeyer": ("app.scrapers.niemeyer", "get_events_niemeyer"),
 }
 
 

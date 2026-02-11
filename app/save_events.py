@@ -69,7 +69,8 @@ def guardar_eventos(scrapers=None):
                     get_events_gijon_umami,
                     get_events_asturias,
                     get_events_jarascada,
-                    get_events_agenda_gijon
+                    get_events_agenda_gijon,
+                    get_events_niemeyer
                 )
 
                 tematicas = [
@@ -101,7 +102,8 @@ def guardar_eventos(scrapers=None):
                     get_events_gijon_umami,
                     get_events_asturias,
                     get_events_jarascada,
-                    get_events_agenda_gijon
+                    get_events_agenda_gijon,
+                    get_events_niemeyer
                 ]
                 
                 # Ejecutar scrapers del sistema antiguo
