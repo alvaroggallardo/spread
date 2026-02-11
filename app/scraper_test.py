@@ -29,6 +29,7 @@ SCRAPER_REGISTRY = {
     "jarascada": ("app.scrapers.jarascada", "get_events_jarascada"),
     "agenda_gijon": ("app.scrapers.agenda_gijon", "get_events_agenda_gijon"),
     "niemeyer": ("app.scrapers.niemeyer", "get_events_centro_niemeyer"),
+    "palacio_valdes": ("app.scrapers.palacio_valdes", "get_events_teatro_palacio_valdes")
 }
 
 

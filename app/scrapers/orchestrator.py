@@ -38,6 +38,7 @@ def scrape_all_sources(report=None):
         ("Jarascada", "jarascada", "get_events_jarascada", {}),
         ("Agenda Gijón", "agenda_gijon", "get_events_agenda_gijon", {}),
         ("Centro Niemeyer", "niemeyer", "get_events_centro_niemeyer", {}),
+        ("Palacio Valdés", "palacio_valdes", "get_events_teatro_palacio_valdes", {}),
     ]
     
     # Ejecutar cada scraper
