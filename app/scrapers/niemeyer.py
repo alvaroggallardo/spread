@@ -1,91 +1,90 @@
 """
-Scraper para eventos - Umami Gijon.
+Scraper para eventos - Centro Niemeyer (Aviles)
 """
 
 from app.scrapers.base import *
 
-def get_events_gijon_umami(max_days_ahead=90):
-    url = "https://umamigijon.com/cursos/"
+def get_events_centro_niemeyer(max_days_ahead=180):
+    url = "https://www.centroniemeyer.es/programacion/"
     events = []
-    driver = get_selenium_driver(headless=True)
 
-    try:
-        driver.get(url)
-        time.sleep(5)  # esperar carga inicial de JS
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
 
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        cards = soup.select("div.mep_event_grid_item")  # más robusto
+    soup = BeautifulSoup(resp.text, "html.parser")
+    items = soup.select("li.programa-listado")
 
-        if not cards:
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
-            soup = BeautifulSoup(driver.page_source, "html.parser")
-            cards = soup.select("div.mep_event_grid_item")
+    today = datetime.now().date()
 
-        for c in cards:
-            # --- fecha ---
-            parsed_date = None
-            date_raw = (c.get("data-date") or "").strip()  # YYYY-MM-DD
-            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_raw):
-                parsed_date = datetime.strptime(date_raw, "%Y-%m-%d")
+    for it in items:
+        try:
+            a = it.select_one("a.programa-listado-enlace")
+            if not a:
+                continue
+
+            link = a.get("href", "").strip()
+            if not link:
+                continue
+
+            title_el = it.select_one(".programa-listado-titular span")
+            title = title_el.get_text(" ", strip=True) if title_el else "Sin titulo"
+
+            cat_el = it.select_one(".programa-cat")
+            categoria = cat_el.get_text(strip=True) if cat_el else ""
+
+            fecha_el = it.select_one(".programa-fecha")
+            fecha_txt = fecha_el.get_text(" ", strip=True).lower() if fecha_el else ""
+
+            fecha_inicio = None
+            fecha_fin = None
+            hora = ""
+
+            if "desde el" in fecha_txt and "hasta el" in fecha_txt:
+                m = re.search(r"desde el (.+?) hasta el (.+)$", fecha_txt)
+                if not m:
+                    continue
+
+                fecha_inicio = dateparser.parse(m.group(1), languages=["es"])
+                fecha_fin = dateparser.parse(m.group(2), languages=["es"])
+
             else:
-                p_date = c.select_one("li.mep_list_event_date .evl-cc p")
-                if p_date:
-                    parsed_date = dateparser.parse(p_date.get_text(strip=True), languages=["es"])
+                fecha_inicio = dateparser.parse(fecha_txt, languages=["es"])
+                if fecha_inicio:
+                    hora = fecha_inicio.strftime("%H:%M")
 
-            if not parsed_date:
+            if not fecha_inicio:
                 continue
 
-            # Filtra por ventana temporal
-            delta_days = (parsed_date.date() - datetime.now().date()).days
-            if delta_days < 0 or delta_days > max_days_ahead:
+            if fecha_inicio.date() < today:
+                if fecha_fin and fecha_fin.date() >= today:
+                    pass
+                else:
+                    continue
+
+            if (fecha_inicio.date() - today).days > max_days_ahead:
                 continue
 
-            # --- título ---
-            title = (c.get("data-title") or "").strip()
-            if not title:
-                h2 = c.select_one(".mep_list_title")
-                title = h2.get_text(strip=True) if h2 else "Sin título"
+            lugar_txt = "Centro Niemeyer, Aviles"
+            lugar = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(lugar_txt)}", "{lugar_txt}")'
 
-            # --- hora ---
-            time_str = ""
-            p_time = c.select_one("li.mep_list_event_date .evl-cc p:nth-of-type(2)")
-            if p_time:
-                time_str = p_time.get_text(strip=True)
+            disciplina = categoria or inferir_disciplina(title)
 
-            # --- localización ---
-            loc_el = c.select_one("li.mep_list_location_name .evl-cc h6")
-            location = loc_el.get_text(strip=True) if loc_el else "Gijón"
-            lugar = f'=HYPERLINK("https://www.google.com/maps/search/?api=1&query={quote_plus(location)}", "{location}")'
-
-            # --- link ---
-            a = c.select_one("a[href]")
-            link = a["href"].strip() if a else url
-
-            # --- disciplina ---
-            disciplina = inferir_disciplina(title)
-
-            # ✅ Evitar duplicados por link
             if any(ev["link"] == link for ev in events):
-                print(f"🔁 Evento duplicado saltado: {title}")
                 continue
 
             events.append({
-                "fuente": "UmamiGijon",
+                "fuente": "CentroNiemeyer",
                 "evento": title,
-                "fecha": parsed_date,
-                "hora": time_str,
+                "fecha": fecha_inicio,
+                "fecha_fin": fecha_fin,
+                "hora": hora,
                 "lugar": lugar,
                 "link": link,
                 "disciplina": disciplina
             })
 
-            print(f"✅ Gijón/Umami: {title} ({parsed_date.date()})")
+        except Exception as e:
+            print(f"Error procesando evento Niemeyer: {e}")
 
-    except Exception as e:
-        print(f"❌ Error en Gijón/Umami: {e}")
-    finally:
-        driver.quit()
-
-    print(f"🎉 Total eventos Gijón/Umami: {len(events)}")
+    print(f"Total eventos Centro Niemeyer: {len(events)}")
     return events
